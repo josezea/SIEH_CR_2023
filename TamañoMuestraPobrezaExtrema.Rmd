@@ -1,6 +1,6 @@
 ---
 title: "Escenarios pobreza extrema"
-author: "José Fernando Zea"
+author: "CEPAL"
 date: "2023-03-21"
 output: html_document
 ---
@@ -57,7 +57,7 @@ P = 0.0638
 cve <- 0.022
 conf <- 0.95
 r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
-b <-  3.040368  
+b <-  1 #13.040368  
 deff <- 1.229
 nbarra_encuesta <- 9.236819
 
