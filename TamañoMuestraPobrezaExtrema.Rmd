@@ -1,0 +1,426 @@
+---
+title: "Escenarios pobreza extrema"
+author: "José Fernando Zea"
+date: "2023-03-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Pobreza Encuenta Nacional de hogares:
+
+
+
+Recordemos que: el indicador de pobreza es anual, la desocupación es trimestral.
+$$
+me = z_{1-\alpha/2}S_{\hat{\theta}}= z_{1-\alpha/2}\hat{\theta}CVE
+$$
+
+Por tanto: $$\delta = mer = CVE*z$$
+
+
+
+El tamaño de muestra utilizado sin corrección por finitud es:
+
+$$
+n_0 = (z^2/(\delta * P)^2) * S2 = (z^2/(\delta P)^2) * PQ*DEFF
+$$
+
+
+$\delta$ representa el error estándar:
+
+$$
+n_0 =  (z^2/(z*CVE* P)^2) * PQ*DEFF = (P*Q *DEFF) /(CVE*P)^2 
+$$
+
+
+El coeficiente de correlación intraclásica es calculado basdo en el deff:
+
+$$
+\rho = \frac{DEFF - 1}{\bar{n}-1} 
+$$
+
+# Pobreza extrema ENAHO 2022
+
+Realizamos el análisis de pobreza extrema con la ENAHO (2022) a nivel nacional, los insumos de las tablas de muestreo se obtienen a partir de la encuesta:
+
+
+Calculamos la encuesta de muestreo nacional:
+
+```{r}
+# Resultados de SPSS
+N <- 1734039
+M <- 10336
+P = 0.0638
+cve <- 0.022
+conf <- 0.95
+r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+b <-  3.040368  
+deff <- 1.229
+nbarra_encuesta <- 9.236819
+
+
+# Calculamos alpha, z, icc
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+# Tabla de muestreo 
+tm_pe_nnal <- ss4HHSp(N,
+M, 
+r,  
+b, 
+rho = icc,
+P, 
+delta =  cve * z, #  Error estándar relativo,
+conf, m = 5:10)
+
+# De 10 casas se encuentra 9.3 y de esas el 86 le contesta para una tasa efectiva de 0.93 * 0.86
+tm_pe_nnal$HogEfect <- tm_pe_nnal$HouseholdsInSample / ((1-0.07) * 0.86)
+```
+
+
+Calculamos las tablas de muestreo para el área urbana:
+
+
+```{r}
+
+# Resultados de SPSS
+N <- 1257539
+M <- 7106
+P = 0.0564
+cve <- 0.03
+conf <- 0.95
+r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+b <- 1 #
+deff <- 1.333
+nbarra_encuesta <- 8.98
+
+
+
+# Calculamos alpha, z, icc
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+# Tabla de muestreo 
+tm_pe_urbano <- ss4HHSp(N,
+M, # Recuendo no poderado
+r,  # tasa que afecta
+b, #
+rho = icc,
+P, 
+delta =  cve * z, #  Error estándar relativo,
+conf, m = 5:10)
+
+# De 10 casas se encuentra 9.3 y de esas el 86 le contesta para una tasa efectiva de 0.93 * 0.86
+tm_pe_urbano$HogEfect <- tm_pe_urbano$HouseholdsInSample / ((1-0.07) * 0.83)
+```
+
+
+Calculamos las tablas de muestreo para el área rural:
+
+
+```{r}
+# Resultados de SPSS
+N <- 476500
+M <- 3230
+P = 0.0833
+cve <- 0.03
+conf <- 0.95
+r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+b <- 1 #
+deff <- 0.943
+nbarra_encuesta <- 9.85
+
+# Calculamos alpha, z, icc
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+# Tabla de muestreo 
+tm_pe_rural <- ss4HHSp(N,
+M, # Recuendo no poderado
+r,  # tasa que afecta
+b, #
+rho = icc,
+P, 
+delta =  cve * z, #  Error estándar relativo,
+conf, m = 5:10)
+
+# De 10 casas se encuentra 9.3 y de esas el 86 le contesta para una tasa efectiva de 0.93 * 0.86
+tm_pe_rural$HogEfect <- tm_pe_rural$HouseholdsInSample / ((1-0.08) * 0.93)
+```
+
+
+Calculamos también los escenarios por región:
+
+Arrancamos por región central:
+
+```{r}
+# Resultados de SPSS
+N <- 1072145
+M <- 5876
+P = 0.0438
+cve <- 0.046
+conf <- 0.95
+r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+b <- 1 #
+deff <- 1.293
+nbarra_encuesta <- 8.86
+
+
+# Calculamos alpha, z, icc
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+# Tabla de muestreo 
+tm_pe_regionCentral <- ss4HHSp(N,
+M, # Recuendo no poderado
+r,  # tasa que afecta
+b, #
+rho = icc,
+P, 
+delta =  cve * z, #  Error estándar relativo,
+conf, m = 5:10)
+
+# De 10 casas se encuentra 9.3 y de esas el 86 le contesta para una tasa efectiva de 0.93 * 0.86
+tm_pe_regionCentral$HogEfect <- tm_pe_regionCentral$HouseholdsInSample / ((1-0.08) * 0.93)
+```
+
+
+
+Arrancamos por región Chorotega:
+
+```{r}
+# Resultados de SPSS
+N <- 130152
+M <- 970
+P = 0.0788
+cve <- 0.046
+conf <- 0.95
+r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+b <- 1 #
+deff <- 1.156
+nbarra_encuesta <- 10.10
+
+
+
+# Calculamos alpha, z, icc
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+# Tabla de muestreo 
+tm_pe_regionChorotega <- ss4HHSp(N,
+M, # Recuendo no poderado
+r,  # tasa que afecta
+b, #
+rho = icc,
+P, 
+delta =  cve * z, #  Error estándar relativo,
+conf, m = 5:10)
+
+# De 10 casas se encuentra 9.3 y de esas el 86 le contesta para una tasa efectiva de 0.93 * 0.86
+tm_pe_regionChorotega$HogEfect <- tm_pe_regionChorotega$HouseholdsInSample / ((1-0.08) * 0.93)
+```
+
+
+
+
+Arrancamos por región Pacífico central:
+
+
+```{r}
+# Resultados de SPSS
+N <- 102163
+M <- 706
+P = 0.0992
+cve <- 0.046
+conf <- 0.95
+r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+b <- 1 #
+deff <- 1.224
+nbarra_encuesta <- 9.29
+
+# Calculamos alpha, z, icc
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+# Tabla de muestreo 
+tm_pe_regionPacificaCentral <- ss4HHSp(N,
+M, # Recuendo no poderado
+r,  # tasa que afecta
+b, #
+rho = icc,
+P, 
+delta =  cve * z, #  Error estándar relativo,
+conf, m = 5:10)
+
+# De 10 casas se encuentra 9.3 y de esas el 86 le contesta para una tasa efectiva de 0.93 * 0.86
+tm_pe_regionPacificaCentral$HogEfect <- tm_pe_regionPacificaCentral$HouseholdsInSample / ((1-0.08) * 0.93)
+```
+
+
+
+Región Brunca:
+
+
+```{r}
+# Resultados de SPSS
+N <- 133561
+M <- 948
+P = 0.1021
+cve <- 0.046
+conf <- 0.95
+r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+b <- 1 #
+deff <- 1.038
+nbarra_encuesta <- 9.88
+
+# Calculamos alpha, z, icc
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+# Tabla de muestreo 
+tm_pe_regionBrunca <- ss4HHSp(N,
+M, # Recuendo no poderado
+r,  # tasa que afecta
+b, #
+rho = icc,
+P, 
+delta =  cve * z, #  Error estándar relativo,
+conf, m = 5:10)
+
+# De 10 casas se encuentra 9.3 y de esas el 86 le contesta para una tasa efectiva de 0.93 * 0.86
+tm_pe_regionBrunca$HogEfect <- tm_pe_regionBrunca$HouseholdsInSample / ((1-0.08) * 0.93)
+```
+
+
+
+Calculamos para la región Huetar Atlántico
+
+
+```{r}
+# Resultados de SPSS
+N <- 152628
+M <- 993
+P = 0.1053
+cve <- 0.046
+conf <- 0.95
+r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+b <- 1 #
+deff <- 0.846
+nbarra_encuesta <- 9.55
+
+
+# Calculamos alpha, z, icc
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+# Tabla de muestreo 
+tm_pe_regionHuetarAtlantico <- ss4HHSp(N,
+M, # Recuendo no poderado
+r,  # tasa que afecta
+b, #
+rho = icc,
+P, 
+delta =  cve * z, #  Error estándar relativo,
+conf, m = 5:10)
+
+# De 10 casas se encuentra 9.3 y de esas el 86 le contesta para una tasa efectiva de 0.93 * 0.86
+tm_pe_regionHuetarAtlantico$HogEfect <- tm_pe_regionHuetarAtlantico$HouseholdsInSample / ((1-0.08) * 0.93)
+```
+
+
+
+Calculamos para la región Huetar Norte
+
+
+
+```{r}
+# Resultados de SPSS
+N <- 143390
+
+M <- 843
+P = 0.0949
+cve <- 0.046
+conf <- 0.95
+r <- 1 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+b <- 1 #
+deff <- 1.227
+
+nbarra_encuesta <- 10.04
+
+
+
+# Calculamos alpha, z, icc
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+# Tabla de muestreo 
+tm_pe_regionHuetarNorte <- ss4HHSp(N,
+M, # Recuendo no poderado
+r,  # tasa que afecta
+b, #
+rho = icc,
+P, 
+delta =  cve * z, #  Error estándar relativo,
+conf, m = 5:10)
+
+# De 10 casas se encuentra 9.3 y de esas el 86 le contesta para una tasa efectiva de 0.93 * 0.86
+tm_pe_regionHuetarNorte$HogEfect <- tm_pe_regionHuetarNorte$HouseholdsInSample / ((1-0.08) * 0.93)
+```
+
+
+
+# Consolidación
+
+
+```{r}
+tm_pe_nnal$Agregacion <- "Nacional"
+tm_pe_urbano$Agregacion <- "Urbano"
+tm_pe_rural$Agregacion <- "Rural"
+
+tm_pe_regionCentral$Agregacion <- "Region Central"
+tm_pe_regionChorotega$Agregacion <- "Region Chorotega"
+tm_pe_regionPacificaCentral$Agregacion <- "Region Pacífica - Central"
+tm_pe_regionBrunca$Agregacion <- "Region Brunca"
+tm_pe_regionHuetarAtlantico$Agregacion <- "Region Huetar Atlántico"
+tm_pe_regionHuetarNorte$Agregacion <- "Region Huetar Norte"
+
+
+tm_pe_nnal <- tm_pe_nnal %>% relocate(Agregacion)
+
+tm_pe_urbano <- tm_pe_urbano %>% relocate(Agregacion)
+tm_pe_rural <-  tm_pe_rural %>% relocate(Agregacion)
+
+tm_pe_regionCentral <- tm_pe_regionCentral %>% relocate(Agregacion)
+tm_pe_regionChorotega <- tm_pe_regionChorotega %>% relocate(Agregacion)
+tm_pe_regionPacificaCentral <- tm_pe_regionPacificaCentral %>% relocate(Agregacion)
+tm_pe_regionBrunca <- tm_pe_regionBrunca %>% relocate(Agregacion)
+tm_pe_regionHuetarAtlantico <- tm_pe_regionHuetarAtlantico %>% relocate(Agregacion)
+tm_pe_regionHuetarNorte <- tm_pe_regionHuetarNorte %>% relocate(Agregacion)
+
+
+tm_consolidado <- rbind(tm_pe_nnal[4,], 
+                        tm_pe_urbano[4,], tm_pe_rural[4,],
+                        tm_pe_regionCentral[4,], tm_pe_regionChorotega[4,], 
+                        tm_pe_regionPacificaCentral[4,] ,
+                        tm_pe_regionBrunca[4,], tm_pe_regionHuetarAtlantico[4,],
+                        tm_pe_regionHuetarNorte[4,])
+
+```
+
+
+
+```{r}
+write_xlsx(tm_consolidado, "tm_consolidado_pobreza extrema.xlsx")
+```
