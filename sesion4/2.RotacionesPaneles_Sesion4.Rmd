@@ -1,0 +1,320 @@
+---
+title: "Ejercicio de rotaciones"
+author: "José Fernando Zea"
+date: "2023-03-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Cargamos los paquetes, necesarios y funciones para establecer las rotaciones durante el período intercensal en cada uno de los estratos que se definan. Para efectos de este ejercicio se aplicarán las rotaciones considerando como estratos las regiones con los tamaños establecidos para un período de 13 años.
+
+
+```{r, warning=FALSE, message=FALSE}
+library(samplesize4surveys)
+library(SamplingCoordination)
+library(dplyr)
+library(readxl)
+library(writexl)
+```
+
+
+En primer lugar calculamos el tamaño de muestra trimestral para la desocupación, exportamos los archivos de parámetros:
+
+```{r}
+df_parametrostablas <- read_excel("ParametrosTablasMuestreo_Desempleo.xlsx") 
+```
+
+
+
+```{r}
+f_tablaMue <- function(str_region){
+  temp <-  df_parametrostablas %>% filter(Agregacion == str_region) 
+  
+  N <- temp$N
+  M <- temp$M
+  P = temp$P
+  cve <- temp$cve
+  conf <- temp$conf
+  r1 <- temp$r1
+  r2 <- temp$r2
+  b <-  temp$b  # Personas por hogar
+  deff <- temp$deff
+  
+  nro_vivXUPM <- temp$nro_vivXUPM
+  PM <- temp$PM # Perdida de Muestra
+  TR <- temp$TR # Tasa de resupesta
+  
+  # Calculamos alpha, z, icc
+  r <- r1  * r2 # Tasa de población afectada (dado que es un parámetro a nivel de hogar)
+  nbarra_encuesta <- nro_vivXUPM * b * r # Personas
+  alpha <- 1 - conf
+  z <- qnorm(1-alpha/2)
+  icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+    
+  # Tabla de muestreo 
+  tabla_mue <- ss4HHSp(N,
+  M, # Recuendo no poderado
+  r,  # tasa que afecta
+  b, 
+  rho = icc,
+  P, 
+  delta =  cve * z, #  Error estándar relativo,
+  conf, m = 8)
+  
+  
+  tabla_mue$M <- M
+  tabla_mue$N <- N
+  tabla_mue <- tabla_mue %>% relocate(M)
+  tabla_mue <- tabla_mue %>% relocate(N)
+  tabla_mue
+  }
+```
+
+
+```{r}
+f_tablaMue_PobrezaExtrema <- function(str_region){
+  temp <-  df_parametrostablas_pobrezaExtrema %>% filter(Agregacion == str_region) 
+  
+  N <- temp$N
+  M <- temp$M
+  P = temp$P
+  cve <- temp$cve
+  conf <- temp$conf
+  r <- temp$r
+
+  b <-  temp$b  # Personas por hogar
+  deff <- temp$deff
+  
+  PM <- temp$PM # Perdida de Muestra
+  TR <- temp$TR # Tasa de resupesta
+  
+  # Calculamos alpha, z, icc
+  nbarra_encuesta <- temp$nro_vivXUPM # Personas
+  alpha <- 1 - conf
+  z <- qnorm(1-alpha/2)
+  icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+    
+  # Tabla de muestreo 
+  tabla_mue <- ss4HHSp(N,
+  M, # Recuendo no poderado
+  r,  # tasa que afecta
+  b, 
+  rho = icc,
+  P, 
+  delta =  cve * z, #  Error estándar relativo,
+  conf, m = 5:15)
+  
+  
+  tabla_mue$M <- M
+  tabla_mue$N <- N
+  tabla_mue <- tabla_mue %>% relocate(M)
+  tabla_mue <- tabla_mue %>% relocate(N)
+  tabla_mue
+  }
+```
+
+
+El tamaño de muestra nacional es:
+
+```{r}
+ tabla_Nacional <- f_tablaMue("Nacional")
+```
+
+El tamaño de muestra por  área urbano:
+```{r}
+tabla_zonaUrbana <- f_tablaMue("Zona_Urbana")
+```
+
+
+El tamaño de muestra por  área rural:
+```{r}
+ tabla_zonaRural <- f_tablaMue("Zona_Rural")
+```
+
+
+El tamaño de muestra por zonas:
+
+```{r}
+tabla_regionCentral <- f_tablaMue("Region_Central")
+tabla_regionChorotega <- f_tablaMue("Region_Chorotega")
+tabla_regionPacificaCentral <- f_tablaMue( "Region_Pacifica_Central")
+tabla_regionBrunca <- f_tablaMue("Region_Brunca")
+tabla_regionHuetarAtlantico <- f_tablaMue( "Region_Huetar_Atlantico")
+tabla_regionHuetarNorte <- f_tablaMue("Región_Huetar_Norte")
+```
+
+
+```{r}
+tabla_regionCentral$PSUinSample + tabla_regionChorotega$PSUinSample +
+tabla_regionPacificaCentral$PSUinSample + tabla_regionBrunca$PSUinSample +
+tabla_regionHuetarAtlantico$PSUinSample + tabla_regionHuetarNorte$PSUinSample
+```
+
+
+```{r}
+tabla_zonaUrbana$PSUinSample + tabla_zonaRural$PSUinSample
+```
+
+```{r}
+tabla_Nacional$PSUinSample
+```
+
+El tamaño de muestra considerado será de 3013 a nivel nacional, urbano y a nivel de zonas se realizará una encuesta más en la zona de menor tamaño:
+
+
+En la región de menor tamaño se realizará una encuesta de más (Huetar Norte):
+
+
+```{r}
+df_tamMueUPM_region <- data.frame(
+  Region = c("Central", "Chorotega", "Pacífica Central", "Brunca", "Huetar Atlántico",
+             "Huetar Norte"),
+  TamMue = c(tabla_regionCentral$PSUinSample, tabla_regionChorotega$PSUinSample,
+tabla_regionPacificaCentral$PSUinSample, tabla_regionBrunca$PSUinSample,
+tabla_regionHuetarAtlantico$PSUinSample, tabla_regionHuetarNorte$PSUinSample + 1) )
+
+df_tamMueUPM_zona <- data.frame(Zona = c("Urbano", "Rural"),
+                                TamMue = c(tabla_zonaUrbana$PSUinSample, tabla_zonaRural$PSUinSample))
+```
+
+Creación de matriz para repartir la muestra:
+
+
+```{r}
+df_tamUPM <- matrix(NA_real_, nrow = nrow(df_tamMueUPM_region) + 1, 
+       ncol = ncol(df_tamMueUPM_zona) + 1)
+
+df_tamUPM[1:nrow(df_tamMueUPM_region), ncol(df_tamMueUPM_region) + 1] <- df_tamMueUPM_region$TamMue
+df_tamUPM[nrow(df_tamMueUPM_region) + 1,  1:ncol(df_tamMueUPM_zona) ] <- df_tamMueUPM_zona$TamMue
+```
+
+
+
+```{r}
+df_tamUPM[7,3] <- sum(df_tamUPM[7,], na.rm = T) 
+```
+
+
+```{r}
+df_tamUPM2 <- df_tamUPM
+for(i in 1:6){
+  for(j in 1:2){
+    df_tamUPM2[i,j] <- round(df_tamUPM[7,3] * (df_tamUPM[i,3] / df_tamUPM[7,3]) *                        (df_tamUPM[7,j] / df_tamUPM[7,3]))
+  }
+}  
+```
+
+```{r}
+colnames(df_tamUPM2) <- c("Urbano", "Rural", "Total")
+row.names(df_tamUPM2) <- c(df_tamMueUPM_region$Region, "Total")
+df_tamUPM2 <- as.data.frame(df_tamUPM2)
+```
+
+El número total de UPMs a realizar en el área urbana y rural para la encuesta de desocupación durante un trimestre es de:
+
+```{r}
+library(flextable)
+df_tamUPM2 %>% flextable()
+```
+
+El número de encuestas de hogares a realizar es de:
+
+```{r}
+df_tamUHogares <- df_tamUPM2 * 8
+```
+
+
+Finalmente el número de personas mayores de 15 años economicamente activa que se les realiza la encuesta es aproximadamente de:
+
+```{r}
+df_tamUHogares * 1.5
+```
+
+# Tamaño de muestra acumulada anual para la encuesta de pobreza
+
+El tamaño anterior se ejecuta en 15 de los 15 paneles que se disponen cada trimestre, en contraste dado que el módulo de pobreza se realiza en la primera y quinta visita, el tamaño de muestra de pobreza necesario se realiza en únicamente 6 de los 15 paneles cada trimestre, es decir en un año en 24 de estos paneles.
+
+En cada trimestre el tamaño de muestra es 6/15 * tamaño de muestra de UPMs que se realiza para estudiar desempleo. En un año este tamaño de muestra será
+
+4 * 6/15 el tamaño de muestra de UPMs que se plantea para desempleo, es decir:
+
+24/15 * tamaño de muestra de UPMs de desempleo:
+
+```{r}
+df_tamMueUPM_Pobreza <- round(df_tamUPM2 * 24 / 15)
+df_tamMueUPM_Pobreza %>% flextable()
+```
+
+Por otro lado, el tamaño en número de hogares es de:
+
+```{r}
+df_tamMueHogares_Pobreza <- df_tamMueUPM_Pobreza * 8
+df_tamMueHogares_Pobreza %>% flextable()
+```
+
+
+
+Estas cantidades satisfacen los requerimientos para estimar la pobreza extrema que se estimaron a partir de las tablas de muestreo:
+
+
+```{r}
+df_parametrostablas_pobrezaExtrema <- read_excel("ParametrosTablasMuestreo_PobrezaExtrema.xlsx")
+
+
+tabla_Nacional_PE <- f_tablaMue_PobrezaExtrema("Nacional")
+
+tabla_zonaUrbana_PE <- f_tablaMue_PobrezaExtrema("Zona_Urbana")
+tabla_zonaRural_PE <- f_tablaMue_PobrezaExtrema("Zona_Rural")
+
+tabla_regionCentral_PE <- f_tablaMue_PobrezaExtrema("Region_Central")
+tabla_regionChorotega_PE <- f_tablaMue_PobrezaExtrema("Region_Chorotega")
+tabla_regionPacificaCentral_PE <- f_tablaMue_PobrezaExtrema( "Region_Pacifica_Central")
+tabla_regionBrunca_PE <- f_tablaMue_PobrezaExtrema("Region_Brunca")
+tabla_regionHuetarAtlantico_PE <- f_tablaMue_PobrezaExtrema( "Region_Huetar_Atlantico")
+tabla_regionHuetarNorte_PE <- f_tablaMue_PobrezaExtrema("Región_Huetar_Norte")
+
+tabla_Nacional_PE$Agregacion <- "Nacional"
+tabla_zonaUrbana_PE$Agregacion <- "Urbano"
+tabla_zonaRural_PE$Agregacion <- "Rural"
+
+tabla_regionCentral_PE$Agregacion <- "Region Central"
+tabla_regionChorotega_PE$Agregacion <- "Region Chorotega"
+tabla_regionPacificaCentral_PE$Agregacion <- "Region Pacífica - Central"
+tabla_regionBrunca_PE$Agregacion <- "Region Brunca"
+tabla_regionHuetarAtlantico_PE$Agregacion <- "Region Huetar Atlántico"
+tabla_regionHuetarNorte_PE$Agregacion <- "Region Huetar Norte"
+
+
+tabla_Nacional_PE <- tabla_Nacional_PE %>% relocate(Agregacion)
+
+tabla_zonaUrbana_PE <- tabla_zonaUrbana_PE %>% relocate(Agregacion)
+tabla_zonaRural_PE <-  tabla_zonaRural_PE %>% relocate(Agregacion)
+
+tabla_regionCentral_PE <- tabla_regionCentral_PE %>% relocate(Agregacion)
+tabla_regionChorotega_PE <- tabla_regionChorotega_PE %>% relocate(Agregacion)
+tabla_regionPacificaCentral_PE <- tabla_regionPacificaCentral_PE %>% relocate(Agregacion)
+tabla_regionBrunca_PE <- tabla_regionBrunca_PE %>% relocate(Agregacion)
+tabla_regionHuetarAtlantico_PE <- tabla_regionHuetarAtlantico_PE %>% relocate(Agregacion)
+tabla_regionHuetarNorte_PE <- tabla_regionHuetarNorte_PE %>% relocate(Agregacion)
+
+
+tm_consolidado_PE <- rbind(tabla_Nacional_PE[4,], 
+                        tabla_zonaUrbana_PE[4,], tabla_zonaRural_PE[4,],
+                        tabla_regionCentral_PE[4,], tabla_regionChorotega_PE[4,], 
+                        tabla_regionPacificaCentral_PE[4,] ,
+                        tabla_regionBrunca_PE[4,], tabla_regionHuetarAtlantico_PE[4,],
+                        tabla_regionHuetarNorte_PE[4,])
+tm_consolidado_PE %>% flextable()
+```
+
+
+```{r}
+
+```
+
