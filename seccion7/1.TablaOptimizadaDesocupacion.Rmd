@@ -1,0 +1,278 @@
+---
+title: "Tamaño de muestra encuesta de empleo y pobreza"
+author: "CEPAL"
+date: "2023-03-26"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Cargamos los paquetes, necesarios y funciones para establecer las rotaciones durante el período intercensal en cada uno de los estratos que se definan. Para efectos de este ejercicio se aplicarán las rotaciones considerando como estratos las regiones con los tamaños establecidos para un período de 13 años.
+
+```{r, warning=FALSE, message=FALSE}
+library(samplesize4surveys)
+library(SamplingCoordination)
+library(dplyr)
+library(readxl)
+library(writexl)
+library(flextable)
+```
+
+En primer lugar calculamos el tamaño de muestra trimestral para la desocupación, exportamos los archivos de parámetros:
+
+```{r, warning=FALSE, message=FALSE}
+df_parametrostablas_desocupacion <- read_excel("ParametrosTablasMuestreo_Desempleo.xlsx") 
+```
+
+```{r, warning=FALSE, message=FALSE}
+f_tablaMue_desocupacion <- function(df_parametrostablas, str_region, cve, m){
+  temp <-  df_parametrostablas %>% filter(Agregacion == str_region) 
+  
+  N <- temp$N
+  M <- temp$M
+  P = temp$P
+  #cve <- temp$cve
+  conf <- temp$conf
+  r1 <- temp$r1
+  r2 <- temp$r2
+  b <-  temp$b  # Personas por hogar
+  deff <- temp$deff
+  
+  nro_vivXUPM <- temp$nro_vivXUPM
+  PM <- temp$PM # Perdida de Muestra
+  TR <- temp$TR # Tasa de resupesta
+  
+  # Calculamos alpha, z, icc
+  r <- r1  * r2 # Tasa de población afectada (dado que es un parámetro a nivel de persona)
+  nbarra_encuesta <- nro_vivXUPM * b * r # Personas
+  alpha <- 1 - conf
+  z <- qnorm(1-alpha/2)
+  icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+    
+  # Tabla de muestreo 
+  tabla_mue <- ss4HHSp(N,
+  M, # Recuendo no poderado
+  r,  # tasa que afecta
+  b, 
+  rho = icc,
+  P, 
+  delta =  cve * z, #  Error estándar relativo,
+  conf, m = m)
+  
+  # Aumenta el número de hogares por UPM
+  tabla_mue$HouseholdsPerPSU_Adjusted = ceiling(tabla_mue$HouseholdsPerPSU  /  ((1-PM) * TR))
+  
+  # Ya que informante idoneo es un miembro del hogar
+  tabla_mue$HouseholdsInSample_Adjusted <- tabla_mue$HouseholdsPerPSU_Adjusted * 
+                                          tabla_mue$PSUinSample 
+  tabla_mue$PersonsInSample_Adjusted <- round(tabla_mue$HouseholdsInSample_Adjusted *  b * r) 
+
+  tabla_mue$ajuste_perdida <- ((1-PM) * TR)
+  tabla_mue$n_personaXhogar <- b * r
+  tabla_mue$cve <- cve
+ 
+  tabla_mue$M <- M
+  tabla_mue$N <- N
+  
+  tabla_mue <- tabla_mue %>% relocate(cve)
+  tabla_mue <- tabla_mue %>% relocate(n_personaXhogar)
+  tabla_mue <- tabla_mue %>% relocate(ajuste_perdida)
+
+  tabla_mue <- tabla_mue %>% relocate(M)
+  tabla_mue <- tabla_mue %>% relocate(N)
+  tabla_mue
+  }
+```
+
+
+El tamaño de muestra nacional es:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_Nacional <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Nacional", cve = 0.025 , m = 6)
+```
+
+Se realiza la optimización del cve para la zona urbano y rural:
+
+```{r, warning=FALSE, message=FALSE}
+f_optimizacion_cve_zona <- function(cve_param){
+cve_num <- cve_param 
+suma_psu <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Zona_Urbana", 
+                        cve = cve_num , m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Zona_Rural", 
+                        cve = cve_num, m = 6)$PSUinSample     
+
+return(abs(tabla_Nacional$PSUinSample - suma_psu))  
+}
+```
+
+Usar una grilla para encontrar el cve deseado óptimo para zona urbana y rural y coincida con el nacional:
+
+```{r, warning=FALSE, message=FALSE}
+grilla_zona <- seq(df_parametrostablas_desocupacion$cve_original[2] - 0.005, df_parametrostablas_desocupacion$cve_original[2] + 0.005, by =  0.00001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+vctr_optim_zona[i] <- f_optimizacion_cve_zona(grilla_zona[i])
+}
+names(vctr_optim_zona) <- grilla_zona 
+solucion_zona <- names(vctr_optim_zona[abs(vctr_optim_zona) <= 1]) %>% as.numeric()
+solucion_zona <- min(solucion_zona)
+```
+
+El tamaño de muestra por área urbano:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_zonaUrbana <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Zona_Urbana", cve = solucion_zona,  m = 6)
+```
+
+El tamaño de muestra por área rural:
+
+```{r, warning=FALSE, message=FALSE}
+ tabla_zonaRural <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Zona_Rural",  cve = solucion_zona,  m = 6)
+```
+
+Verificamos la coherencia por área:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_zonaUrbana$PSUinSample + tabla_zonaRural$PSUinSample
+```
+
+# Tamaño de muestra de desempleo por regiones
+
+Se realiza la optimización del cve para las regiones:
+
+```{r, warning=FALSE, message=FALSE}
+f_optimizacion_cve_region <- function(cve_param){
+cve_num <- cve_param 
+suma_psu <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Central", 
+                        cve = cve_num , m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Chorotega", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Pacifica_Central", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Brunca", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Huetar_Atlantico", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Huetar_Norte", 
+                        cve = cve_num, m = 6)$PSUinSample 
+return(abs(tabla_Nacional$PSUinSample - suma_psu))  
+}
+```
+
+Usar una grilla para encontrar el cve deseado óptimo para zona urbana y rural y coincida con el nacional:
+
+```{r, warning=FALSE, message=FALSE}
+grilla_region <- seq(df_parametrostablas_desocupacion$cve_original[4] - 0.005, df_parametrostablas_desocupacion$cve_original[4] + 0.005, by =  0.00001)
+
+vctr_optim_region <- length(seq_along(grilla_region))
+for( i in seq_along(grilla_region) ){
+vctr_optim_region[i] <- f_optimizacion_cve_region(grilla_region[i])
+}
+names(vctr_optim_region) <- grilla_region 
+solucion_region <- names(vctr_optim_region[abs(vctr_optim_region) <= 1]) %>% as.numeric()
+solucion_region <- min(solucion_region)
+```
+
+El tamaño de muestra por zonas:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_regionCentral <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Central", cve = solucion_region, m = 6)
+tabla_regionChorotega <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Chorotega", solucion_region, m = 6)
+tabla_regionPacificaCentral <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Pacifica_Central", solucion_region, m = 6)
+tabla_regionBrunca <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                                              "Region_Brunca", solucion_region, m = 6)
+tabla_regionHuetarAtlantico <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Huetar_Atlantico", solucion_region, m = 6)
+tabla_regionHuetarNorte <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Huetar_Norte", solucion_region, m = 6)
+```
+
+Verificamos la coherencia del número de UPMs:
+
+```{r, warning=FALSE, message=FALSE}
+consulta_PSU <- data.frame(PSUinSample_Nacional = tabla_Nacional$PSUinSample,
+           PSUinSample_Zona = tabla_zonaUrbana$PSUinSample + tabla_zonaRural$PSUinSample,
+PSUinSample_Region = tabla_regionCentral$PSUinSample + tabla_regionChorotega$PSUinSample +
+tabla_regionPacificaCentral$PSUinSample + tabla_regionBrunca$PSUinSample +
+tabla_regionHuetarAtlantico$PSUinSample + tabla_regionHuetarNorte$PSUinSample, check.names = F)
+flextable::flextable(consulta_PSU)
+```
+
+El tamaño de muestra considerado será de 3526 a nivel nacional, urbano y regional. El número total de hogares a realizar es de: `r 3526 * 6` hogares
+
+```{r, eval = FALSE, echo = FALSE}
+"21.156 hogares"
+```
+
+COn la no respuesta:
+```{r, eval = FALSE, echo = FALSE}
+3526 * 8
+```
+
+
+
+
+
+
+Observemos los tamaños de UPMs para nacional, zona y región:
+
+```{r}
+tabla_Nacional$agregacion <- "Nacional"
+tabla_Nacional <- tabla_Nacional %>% relocate(agregacion)
+
+tabla_zona <- bind_rows(tabla_zonaUrbana, tabla_zonaRural)
+tabla_zona$agregacion <- c("Urbana", "Rural") 
+
+tabla_zona <- tabla_zona %>% relocate(agregacion)
+
+
+tabla_regiones <- bind_rows(tabla_regionCentral,
+tabla_regionChorotega,
+tabla_regionPacificaCentral,
+tabla_regionBrunca,
+tabla_regionHuetarAtlantico,
+tabla_regionHuetarNorte)
+
+tabla_regiones$agregacion <- c("Central", "Chorotega", "Pacifica Central",
+                               "Brunca", "Huetar Atlantico", "Huetar Norte") 
+
+tabla_regiones <- tabla_regiones %>% relocate(agregacion)
+```
+
+
+Salvar la tabla de pobeza extrema
+
+```{r}
+setwd("output/1.TablaOptimizadaDesocupacion")
+tabla_desocup <- bind_rows(tabla_Nacional, tabla_zona, tabla_regiones)
+saveRDS(tabla_desocup, "tabla_desocup.Rds")
+writexl::write_xlsx(tabla_desocup, "tabla_desocup.xlsx")
+```
+
+
+Guardar las soluciones óptimas cve:
+
+```{r}
+cves_optimos <- c(df_parametrostablas_desocupacion$cve_original[1], solucion_zona, solucion_region)
+names(cves_optimos) <- c("Nacional", "Zona", "Región")
+```
+
+```{r}
+setwd("output/1.TablaOptimizadaDesocupacion")
+saveRDS(cves_optimos, "cves_optimos.Rds")
+```
+
+
+

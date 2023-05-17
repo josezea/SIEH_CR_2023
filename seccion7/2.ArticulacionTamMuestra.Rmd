@@ -1,0 +1,120 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: "2023-05-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Leemos el tamaño de las upms en cada agregación para desocupación y pobreza extrema:
+
+```{r}
+setwd("output/1.TablaOptimizadaPobrezaExtrema")
+tabla_PE <- readRDS("tabla_PE.Rds")
+```
+
+```{r}
+library(readxl)
+library(dplyr)
+```
+
+```{r}
+setwd("output/1.TablaOptimizadaDesocupacion")
+tabla_desocup <- readRDS("tabla_desocup.Rds")
+```
+
+Leer los parámetros de ocupacióny desocupación:
+
+
+```{r}
+df_parametrostablas_pobrezaExtrema <- read_excel("ParametrosTablasMuestreo_PobrezaExtrema.xlsx")
+df_parametrostablas_desocupacion <- read_excel("ParametrosTablasMuestreo_Desempleo.xlsx") 
+```
+
+
+
+Unificamos las dos tablas y las llevamos a anual para ver que agregaciones debo considerar.
+
+```{r}
+tabla_PE_red <- tabla_PE %>% select(agregacion, cve_PE = cve, 
+                    PSUinSample_PE = PSUinSample, 
+                    HouseholdsPerPSU_Adjusted_PE = 
+                      HouseholdsPerPSU_Adjusted, 
+                    HouseholdsInSample_Adjusted_PE = HouseholdsInSample_Adjusted)
+
+
+tabla_desocup_red <- tabla_desocup %>% select(agregacion, cve_desocup = cve, 
+                    PSUinSample_desocup = PSUinSample, 
+                    HouseholdsPerPSU_Adjusted_desocup = 
+                      HouseholdsPerPSU_Adjusted)
+
+tabla_desocup_red$PSUinSample_desocup <- 24/15 * tabla_desocup_red$PSUinSample_desocup
+
+tabla_desocup_red$HouseholdsPerPSU_Adjusted_desocup <- tabla_desocup_red$HouseholdsPerPSU_Adjusted_desocup * tabla_desocup_red$PSUinSample_desocup
+
+
+tabla_indicadores <- inner_join(tabla_PE_red, tabla_desocup_red, by = "agregacion")
+```
+
+
+Observamos que para pobreza a nivel nacional requerimos 5644 (1 más a 5643 la que se observa a la tabla debido a la suma del tamaño para pobreza extrema de todas las regiones). Lo anterior es muy parecido al requerimiento de desocupación.
+
+Nos enfocaremos sin embargo en las regiones que quedaron muy debilmente representadas:
+
+* La región central requiere para pobreza extrema 1.947  para alcanzar el cve requerido, Si se tomara el tamaño de muestra de desocupación se están realizando al acumular el año 968.
+* La región Huetar norte requiere de 789 UPS para alcanzar el cve requerido para pobreza extrema. El tamaño de muestra que nos da desocupación al acumular el año es de 620.8.
+
+* El área urbano requiere en pobreza extrema 3704 y se están realizando 3660, por tanto se requerira un ligero incremento del rural, pero este se realizará a partir del ajuste regional.
+
+* El escenario nacional deberá ver el incremento que se llevará a cabo en la región central
+
+
+Por tanto se consideran los tamaños de muestra de desocupación que satisfacen adecuadamente los requerimientos de todas las regiones, sin embargo para las regiones central y Huetar Norte se aumenta ese tamaño de muestra para satisfacer los requerimientos de pobreza extrema y desocupación:
+
+
+# Ajuste de tamaño de muestra desocupación:
+
+Construimos la nueva tabla con los tamaños para desocupacion 
+
+
+```{r}
+df_Nuevosparametros_desocup <- data.frame(agregacion = tabla_desocup$agregacion,
+  N = tabla_desocup$N,
+  PSUinSample = tabla_desocup$PSUinSample,
+n = tabla_desocup$HouseholdsInSample, 
+P = df_parametrostablas_desocupacion$P,
+deff = df_parametrostablas_desocupacion$deff,
+conf = 0.95)[4:9,]
+
+# Ajustes
+# Región central
+df_Nuevosparametros_desocup$PSUinSample[1] <- tabla_indicadores$PSUinSample_PE[4] * 15/24
+df_Nuevosparametros_desocup$n[1] <- df_Nuevosparametros_desocup$PSUinSample[1]* 6
+
+df_Nuevosparametros_desocup$PSUinSample[6] <- tabla_indicadores$PSUinSample_PE[9] * 15/24
+df_Nuevosparametros_desocup$n[6] <- df_Nuevosparametros_desocup$PSUinSample[6]* 6
+```
+
+
+El tamaño de muestra por región
+```{r}
+df_Nuevosparametros_desocup
+```
+
+El tamaño de muestra para pobreza
+
+```{r}
+df_Nuevosparametros_desocup$PSUinSample * 24/15
+```
+
+Un total de:
+
+```{r}
+sum(df_Nuevosparametros_desocup$PSUinSample * 8)
+```
+
+
