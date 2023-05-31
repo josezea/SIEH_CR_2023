@@ -1,0 +1,302 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: "2023-05-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Cargamos los paquetes, necesarios y funciones para establecer las rotaciones durante el período intercensal en cada uno de los estratos que se definan. Para efectos de este ejercicio se aplicarán las rotaciones considerando como estratos las regiones con los tamaños establecidos para un período de 13 años.
+
+```{r, warning=FALSE, message=FALSE}
+library(samplesize4surveys)
+library(SamplingCoordination)
+library(dplyr)
+library(readxl)
+library(writexl)
+library(flextable)
+```
+
+En primer lugar calculamos el tamaño de muestra trimestral para la pobreza extrema, exportamos los archivos de parámetros:
+
+```{r, warning=FALSE, message=FALSE}
+f_tablaMue_PobrezaExtrema <- function(df_parametrostablas, str_region, cve, m){
+  temp <-  df_parametrostablas %>% filter(Agregacion == str_region) 
+  
+  N <- temp$N
+  M <- temp$M
+  P = temp$P
+  #cve <- temp$cve
+  conf <- temp$conf
+  r <- temp$r
+
+  b <-  temp$b  # Personas por hogar
+  deff <- temp$deff
+  
+  PM <- temp$PM # Perdida de Muestra
+  TR <- temp$TR # Tasa de resupesta
+  
+  # Calculamos alpha, z, icc
+  nbarra_encuesta <- temp$nro_vivXUPM # Personas
+  alpha <- 1 - conf
+  z <- qnorm(1-alpha/2)
+  icc <- (deff - 1) / (nbarra_encuesta - 1) 
+
+  # Tabla de muestreo 
+  tabla_mue <- ss4HHSp(N,
+  M, # Recuendo no poderado
+  r,  # tasa que afecta
+  b, 
+  rho = icc,
+  P, 
+  delta =  cve * z, #  Error estándar relativo,
+  conf, m = m)
+  
+ 
+  tabla_mue$HouseholdsPerPSU_Adjusted = ceiling(tabla_mue$HouseholdsPerPSU  /  ((1-PM) * TR))
+  tabla_mue$HouseholdsInSample_Adjusted <- tabla_mue$HouseholdsPerPSU_Adjusted *  
+                                            tabla_mue$PSUinSample 
+
+  tabla_mue$ajuste_perdida <- ((1-PM) * TR)
+  tabla_mue$M <- M
+  tabla_mue$N <- N
+  tabla_mue$cve <- cve
+ 
+  tabla_mue <- tabla_mue %>% relocate(cve)
+  tabla_mue <- tabla_mue %>% relocate(ajuste_perdida)
+  tabla_mue <- tabla_mue %>% relocate(M)
+  tabla_mue <- tabla_mue %>% relocate(N)
+  tabla_mue
+  }
+```
+
+
+El tamaño de muestra nacional es:
+
+
+```{r}
+df_parametrostablas_pobrezaExtrema <- read_excel("ParametrosTablasMuestreo_PobrezaExtrema.xlsx")
+```
+
+
+
+```{r, warning=FALSE, message=FALSE}
+tabla_Nacional_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas = df_parametrostablas_pobrezaExtrema, 
+          str_region = "Nacional", cve = 0.025, m = 6)
+```
+
+
+Se realiza la optimización del cve para la zona urbano y rural:
+
+```{r, warning=FALSE, message=FALSE}
+f_optimizacion_cve_zona <- function(cve_param){
+cve_num <- cve_param 
+suma_psu <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Zona_Urbana", 
+                        cve = cve_num , m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Zona_Rural", 
+                        cve = cve_num, m = 6)$PSUinSample     
+
+return(abs(tabla_Nacional_PE$PSUinSample - suma_psu))  
+}
+```
+
+Usar una grilla para encontrar el cve deseado óptimo para zona urbana y rural y coincida con el nacional (2.5%)
+
+```{r, warning=FALSE, message=FALSE}
+grilla_zona <- seq(0.025, 0.05, by =  0.001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona(grilla_zona[i])
+}
+names(vctr_optim_zona) <- grilla_zona 
+
+# Descubrir un valle, mínimo
+candidatos <- vctr_optim_zona[rank(vctr_optim_zona) %in% 1:3] 
+distancias <- abs(lag(candidatos) - candidatos)
+LI <- ifelse(which.min(distancias) == 3, names(candidatos[2]) %>% as.numeric(), 
+             names(candidatos[1])) %>% as.numeric()  
+
+LS <- ifelse(which.min(distancias) == 3, names(candidatos[3]) %>% as.numeric(), 
+             names(candidatos[2])) %>% as.numeric() 
+
+
+grilla_zona <- seq(LI - 0.005, 
+                   LS + 0.005, by =  0.00001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona(grilla_zona[i])
+}
+names(vctr_optim_zona) <- grilla_zona 
+solucion_zona <- names(vctr_optim_zona[abs(vctr_optim_zona) <= 1]) %>% as.numeric()
+solucion_zona <- min(solucion_zona)
+```
+
+El tamaño de muestra por área urbano:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_zonaUrbana_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Zona_Urbana", cve = solucion_zona,  m = 6)
+```
+
+El tamaño de muestra por área rural:
+
+```{r, warning=FALSE, message=FALSE}
+ tabla_zonaRural_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Zona_Rural",  cve = solucion_zona,  m = 6)
+```
+
+Verificamos la coherencia por área:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_zonaUrbana_PE$PSUinSample + tabla_zonaRural_PE$PSUinSample
+```
+
+Se deben realizar 4390 encuestas nacionales y urbanas y rurales.
+
+
+# Tamaño de muestra de desempleo por regiones
+
+Se realiza la optimización del cve para las regiones:
+
+```{r, warning=FALSE, message=FALSE}
+f_optimizacion_cve_region <- function(cve_param){
+cve_num <- cve_param 
+suma_psu <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Central", 
+                        cve = cve_num , m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Chorotega", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Pacifica_Central", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Brunca", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Huetar_Atlantico", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Huetar_Norte", 
+                        cve = cve_num, m = 6)$PSUinSample 
+return(abs(tabla_Nacional_PE$PSUinSample - suma_psu))  
+}
+```
+
+Usar una grilla para encontrar el cve deseado óptimo para regiones y coincida con el nacional:
+
+```{r, warning=FALSE, message=FALSE}
+grilla_region <- seq(0.025, 0.06, by =  0.001)
+
+vctr_optim_region <- length(seq_along(grilla_region))
+for( i in seq_along(grilla_region) ){
+  vctr_optim_region[i] <- f_optimizacion_cve_region(grilla_region[i])
+}
+names(vctr_optim_region) <- grilla_region 
+##solucion_region <- candidatos[2] %>% names() %>% as.numeric()
+
+# # Descubrir un valle, mínimo
+candidatos <- vctr_optim_region[rank(vctr_optim_region) %in% 1:3] 
+distancias <- abs(lag(candidatos) - candidatos)
+LI <- ifelse(which.min(distancias) == 3, names(candidatos[2]) %>% as.numeric(),
+             names(candidatos[1]))  %>% as.numeric()
+
+LS <- ifelse(which.min(distancias) == 3, names(candidatos[3]) %>% as.numeric(),
+             names(candidatos[2])) %>% as.numeric()
+
+
+grilla_region <- seq(LI - 0.005,
+                   LS + 0.005, by =  0.00001)
+
+vctr_optim_region <- length(seq_along(grilla_region))
+for( i in seq_along(grilla_region) ){
+  vctr_optim_region[i] <- f_optimizacion_cve_region(grilla_region[i])
+}
+names(vctr_optim_region) <- grilla_region 
+solucion_region <- names(vctr_optim_region[abs(vctr_optim_region) <= 1]) %>% as.numeric()
+solucion_region <- min(solucion_region)
+```
+
+El tamaño de muestra por zonas:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_regionCentral_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Central", cve = solucion_region, m = 6)
+tabla_regionChorotega_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Chorotega", solucion_region, m = 6)
+tabla_regionPacificaCentral_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Pacifica_Central", solucion_region, m = 6)
+tabla_regionBrunca_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                                              "Region_Brunca",
+                                              solucion_region, m = 6)
+tabla_regionHuetarAtlantico_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Huetar_Atlantico", solucion_region, m = 6)
+tabla_regionHuetarNorte_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Huetar_Norte", solucion_region, m = 6)
+```
+
+Verificamos la coherencia del número de UPMs:
+
+```{r, warning=FALSE, message=FALSE}
+consulta_PSU <- data.frame(PSUinSample_Nacional = tabla_Nacional_PE$PSUinSample,
+           PSUinSample_Zona = tabla_zonaUrbana_PE$PSUinSample + tabla_zonaRural_PE$PSUinSample,
+PSUinSample_Region = tabla_regionCentral_PE$PSUinSample + tabla_regionChorotega_PE$PSUinSample +
+tabla_regionPacificaCentral_PE$PSUinSample + tabla_regionBrunca_PE$PSUinSample +
+tabla_regionHuetarAtlantico_PE$PSUinSample + tabla_regionHuetarNorte_PE$PSUinSample, check.names = F)
+flextable::flextable(consulta_PSU)
+```
+
+El tamaño de muestra necesario para un año deberá ser de 4.391 a nivel nacional, urbano y regional. El número total de hogares a realizar es de: `r 4391 * 6` hogares
+
+```{r, eval = FALSE, echo = FALSE}
+"26.346 hogares"
+```
+
+
+Observemos los tamaños de UPMs para nacional, zona y región:
+
+```{r}
+tabla_Nacional_PE$agregacion <- "Nacional"
+tabla_Nacional_PE <- tabla_Nacional_PE %>% relocate(agregacion)
+
+tabla_zona_PE <- bind_rows(tabla_zonaUrbana_PE, tabla_zonaRural_PE)
+tabla_zona_PE$agregacion <- c("Urbana", "Rural") 
+
+tabla_zona_PE <- tabla_zona_PE %>% relocate(agregacion)
+
+
+tabla_regiones <- bind_rows(tabla_regionCentral_PE,
+tabla_regionChorotega_PE,
+tabla_regionPacificaCentral_PE,
+tabla_regionBrunca_PE,
+tabla_regionHuetarAtlantico_PE,
+tabla_regionHuetarNorte_PE)
+
+tabla_regiones$agregacion <- c("Central", "Chorotega", "Pacifica Central",
+                               "Brunca", "Huetar Atlantico", "Huetar Norte") 
+
+tabla_regiones <- tabla_regiones %>% relocate(agregacion)
+```
+
+
+Salvar la tabla de pobeza extrema
+
+```{r}
+setwd("output/1.TablaOptimizadaPobrezaExtrema")
+tabla_PE <- bind_rows(tabla_Nacional_PE, tabla_zona_PE, tabla_regiones)
+saveRDS(tabla_PE, "tabla_PE.Rds")
+writexl::write_xlsx(tabla_PE, "tabla_PE.xlsx")
+```
+
+
+Guardar las soluciones óptimas cve:
+
+```{r}
+cves_optimos <- c(df_parametrostablas_pobrezaExtrema$cve_original[1], solucion_zona, solucion_region)
+names(cves_optimos) <- c("Nacional", "Zona", "Región")
+```
+
+```{r}
+setwd("output/1.TablaOptimizadaPobrezaExtrema")
+saveRDS(cves_optimos, "cves_optimos.Rds")
+```
