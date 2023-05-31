@@ -1,0 +1,209 @@
+---
+title: "Tamano de muestra"
+author: "José Fernando Zea"
+date: "2023-05-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Leemos el tamaño de las upms en cada agregación para desocupación y pobreza extrema:
+
+```{r}
+setwd("output/1.TablaOptimizadaPobrezaExtrema")
+tabla_PE <- readRDS("tabla_PE.Rds")
+```
+
+
+```{r}
+library(readxl)
+library(dplyr)
+```
+
+```{r}
+setwd("output/1.TablaOptimizadaDesocupacion")
+tabla_desocup <- readRDS("tabla_desocup.Rds")
+```
+
+Leer los parámetros de ocupacióny desocupación:
+
+
+```{r}
+df_parametrostablas_pobrezaExtrema <- read_excel("ParametrosTablasMuestreo_PobrezaExtrema.xlsx")
+df_parametrostablas_desocupacion <- read_excel("ParametrosTablasMuestreo_Desempleo.xlsx") 
+```
+
+
+Unificamos las dos tablas y las llevamos a anual para ver que agregaciones debo considerar.
+
+```{r}
+tabla_PE_red <- tabla_PE %>% select(agregacion, cve_PE = cve, 
+                    PSUinSample_PE = PSUinSample, 
+                    HouseholdsPerPSU_Adjusted_PE = 
+                      HouseholdsPerPSU_Adjusted, 
+                    HouseholdsInSample_Adjusted_PE = HouseholdsInSample_Adjusted)
+
+
+tabla_desocup_red <- tabla_desocup %>% select(agregacion, cve_desocup = cve, 
+                    PSUinSample_desocup = PSUinSample, 
+                    HouseholdsPerPSU_Adjusted_desocup = 
+                      HouseholdsPerPSU_Adjusted)
+
+tabla_desocup_red$PSUinSample_desocup <- 24/15 * tabla_desocup_red$PSUinSample_desocup
+
+tabla_desocup_red$HouseholdsPerPSU_Adjusted_desocup <- tabla_desocup_red$HouseholdsPerPSU_Adjusted_desocup * tabla_desocup_red$PSUinSample_desocup
+
+# Esta tabla esta llevada anualmente
+tabla_indicadores_pobreza_desocup <- inner_join(tabla_PE_red, tabla_desocup_red, by = "agregacion")
+```
+
+
+Calculamos si los tamaños de pobreza extrema en la región central satisface el 9%:
+
+```{r}
+PSUinSample_desocup_central <- tabla_indicadores_pobreza_desocup %>%  
+  filter(agregacion  == "Central") %>% pull(PSUinSample_desocup) 
+n_central <- PSUinSample_desocup_central * 6
+```
+
+```{r}
+deff_original_regionCentral <- df_parametrostablas_pobrezaExtrema %>% 
+  filter(Agregacion %in% c("Region_Central")) %>% pull(deff)
+```
+
+```{r}
+df_parametros_regionCentral  <- df_parametrostablas_pobrezaExtrema %>%
+  filter(Agregacion %in% c("Region_Central")) 
+
+nropersonas_original_regionCentral <- 
+  df_parametros_regionCentral$nro_vivXUPM * 
+  df_parametros_regionCentral$b *
+  df_parametros_regionCentral$r 
+```
+
+
+Calculo el deff:
+
+```{r}
+nuevo_deff_regionCentral <- 1 + (6 * 
+        df_parametros_regionCentral$b * df_parametros_regionCentral$r - 1) *   
+           ((deff_original_regionCentral - 1) /                                                         (nropersonas_original_regionCentral - 1) )
+
+
+e4p(N = df_parametros_regionCentral$N , 
+    n =  n_central, 
+    P = df_parametros_regionCentral$P, 
+    DEFF =  nuevo_deff_regionCentral, conf = 0.95, plot = FALSE)
+```
+
+
+Calculamos si los tamaños de pobreza extrema en la región Huetar Norte satisface el 9%:
+
+```{r}
+PSUinSample_desocup_regionHuetarNorte <- tabla_indicadores_pobreza_desocup %>%  
+  filter(agregacion  == "Huetar Norte") %>% pull(PSUinSample_desocup) 
+n_regionHuetarNorte <- PSUinSample_desocup_regionHuetarNorte * 6
+```
+
+```{r}
+deff_original_regionHuetarNorte <- df_parametrostablas_pobrezaExtrema %>% 
+  filter(Agregacion %in% c("Region_Huetar_Norte")) %>% pull(deff)
+```
+
+```{r}
+df_parametros_regionHuetarNorte  <- df_parametrostablas_pobrezaExtrema %>%
+  filter(Agregacion %in% c("Region_Huetar_Norte")) 
+
+nropersonas_original_regionHuetarNorte <- 
+  df_parametros_regionHuetarNorte$nro_vivXUPM * 
+  df_parametros_regionHuetarNorte$b *
+  df_parametros_regionHuetarNorte$r 
+```
+
+
+Calculo el deff:
+
+```{r}
+nuevo_deff_regionHuetarNorte <- 1 + (6 * 
+        df_parametros_regionHuetarNorte$b * df_parametros_regionHuetarNorte$r - 1) *   
+           ((deff_original_regionHuetarNorte - 1) /                                                         (nropersonas_original_regionHuetarNorte - 1))
+
+
+e4p(N = df_parametros_regionHuetarNorte$N , 
+    n =  n_regionHuetarNorte, 
+    P = df_parametros_regionHuetarNorte$P, 
+    DEFF =  nuevo_deff_regionHuetarNorte, conf = 0.95, plot = FALSE)
+```
+
+Se satisfacen los tamaños de muestra para pobreza:
+
+
+Por lo tanto el tamaño de muestra obtenido es:
+
+```{r}
+tabla_indicadores_pobreza_desocup
+
+resultados_desocupacion <- data.frame(agregacion = tabla_indicadores_pobreza_desocup$agregacion,
+                         PSUinSample_desocup = tabla_indicadores_pobreza_desocup$PSUinSample_desocup * 15/24
+                         )
+```
+
+
+```{r}
+setwd("output/1.TablaOptimizadaDesocupacion")
+tabla_desocup <- readRDS("tabla_desocup.Rds")
+```
+
+Por otro lado, la tabla para pobreza extrema:
+
+```{r}
+tabla_indicadores_pobreza_desocup
+
+resultados_PE <- data.frame(agregacion = tabla_indicadores_pobreza_desocup$agregacion,
+                         PSUinSample_PE = tabla_indicadores_pobreza_desocup$PSUinSample_PE)
+
+resultados_PE$HouseholdsPerPSU <- tabla_desocup$HouseholdsPerPSU
+resultados_PE$HouseholdsInSample  <-  resultados_PE$PSUinSample_PE * resultados_PE$HouseholdsPerPSU
+```
+
+
+```{r}
+nuevo_deffs <- 1 + (6 - 1) * ((df_parametrostablas_pobrezaExtrema$deff - 1) / (df_parametrostablas_pobrezaExtrema$nro_vivXUPM - 1) )
+```
+
+
+```{r}
+resultados_PE$cve <- e4p(N = df_parametrostablas_pobrezaExtrema$N , 
+    n =  resultados_PE$HouseholdsInSample, 
+    P = df_parametrostablas_pobrezaExtrema$P, 
+    DEFF =  nuevo_deff_regionCentral, conf = 0.95, plot = FALSE)$cve
+
+resultados_PE$HouseholdsPerPSU_Adjusted <- tabla_desocup$HouseholdsPerPSU_Adjusted
+resultados_PE$HouseholdsInSample_Adjusted <- resultados_PE$HouseholdsPerPSU_Adjusted * resultados_PE$PSUinSample_PE
+```
+
+
+
+
+```{r}
+setwd("output/2.ArticulacionTamMuestra")
+saveRDS(resultados_PE, "resultados_PE.Rds")
+saveRDS(tabla_desocup, "tabla_desocup.Rds")
+```
+
+
+
+
+
+
+Ejercicios pendientes. Relajar el cve para pobreza y desocupación.
+Según lo establecido por INEC!!
+
+
+Desocupacion: Nacional (3%), Zona (Mínimo 5%), Región (5%)
+
+
+Pobreza Extrema: Nacional (2,5%), Zona (), Región (9%)

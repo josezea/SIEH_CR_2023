@@ -1,0 +1,193 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: "2023-05-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Ejercicio para pobreza extrema:
+
+```{r}
+library(samplesize4surveys)
+library(dplyr)
+```
+
+
+```{r}
+
+# Nacional  
+
+  N <- 1734039
+  M <- 10336
+  P = 0.0638
+  conf <- 0.95
+  r <- 1 # desoupación
+
+  b <-  1  # Personas por hogar
+  deff <- 1.23
+  
+  PM <- 0.0687 # Perdida de marco
+  TR <- 0.860 # Tasa de resupesta
+  
+  # Calculamos alpha, z, icc
+  nbarra_encuesta <- 9.24 # Personas
+  alpha <- 1 - 0.95
+  z <- qnorm(1-alpha/2)
+  icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  m = 6
+  cve = 0.022
+    
+  # Tabla de muestreo 
+  tabla_mue <- ss4HHSp(N,
+  M, # Recuendo no poderado
+  r,  # tasa que afecta
+  b, 
+  rho = icc,
+  P, 
+  delta =  cve * z, #  Error estándar relativo,
+  conf, m = m)
+  
+ 
+  tabla_mue$HouseholdsPerPSU_Adjusted = ceiling(tabla_mue$HouseholdsPerPSU  /  ((1-PM) * TR))
+  tabla_mue$HouseholdsInSample_Adjusted <- tabla_mue$HouseholdsPerPSU_Adjusted *  
+                                            tabla_mue$PSUinSample 
+
+  tabla_mue$ajuste_perdida <- ((1-PM) * TR)
+  tabla_mue$M <- M
+  tabla_mue$N <- N
+  tabla_mue$cve <- cve
+ 
+  tabla_mue <- tabla_mue %>% relocate(cve)
+  tabla_mue <- tabla_mue %>% relocate(ajuste_perdida)
+  tabla_mue <- tabla_mue %>% relocate(M)
+  tabla_mue <- tabla_mue %>% relocate(N)
+  tabla_mue
+```
+
+Observe que el deff se ajusta.
+
+
+```{r}
+icc <- (deff - 1) / (nbarra_encuesta - 1) # SPSS
+deff_ajustado <- 1 + (6 - 1) * icc
+icc
+deff_ajustado
+```
+
+
+Se puede calcular en una sola linea como sigue:
+
+```{r}
+1 + (6 - 1) * ( (deff - 1) / (nbarra_encuesta - 1) )
+```
+
+donde deff corresponde al deff obtenido por SPSS, nbarra_encuesta el número de hogares por UPM y el 6 es el número de hogares.
+
+
+```{r}
+tabla_mue$PersonsInSample
+```
+
+Observemos la función inversa:
+
+```{r}
+# Hogares: 33875
+e4p(N = 1734039, n = 33875, P = 0.0638, DEFF = 1.139563, conf = 0.95, plot = FALSE)
+```
+
+Obtenemos el mismo cve!!.
+
+
+
+
+
+# Comprabación función inversa para desocupacion
+
+```{r}
+N <- 2484855 
+M <- 23484
+P = 0.120
+conf <- 0.95
+r1 <- 0.6
+r2 <- 0.79
+b <-  3.04  # Personas por hogar
+deff <- 3.86 
+  
+nro_vivXUPM <- 10.1
+PM <- 0.08   # Perdida de Muestra
+TR <-0.89 # Tasa de resupesta
+  
+  # Calculamos alpha, z, icc
+r <- 0.6   * 0.79 # Tasa de población afectada (dado que es un parámetro a nivel de persona)
+nbarra_encuesta <- nro_vivXUPM * b * r # Personas
+alpha <- 1 - conf
+z <- qnorm(1-alpha/2)
+icc <- (deff - 1) / (nbarra_encuesta - 1) 
+  
+    
+# Tabla de muestreo 
+tabla_mue <- ss4HHSp(N,
+M, # Recuendo no poderado
+r,  # tasa que afecta
+b, 
+rho = icc,
+P, 
+delta =  0.026 * z, #  Error estándar relativo: cve * z,
+conf, m = 6)
+  
+  # Aumenta el número de hogares por UPM
+tabla_mue$HouseholdsPerPSU_Adjusted = ceiling(tabla_mue$HouseholdsPerPSU  /  ((1-PM) * TR))
+  
+# Ya que informante idoneo es un miembro del hogar
+tabla_mue$HouseholdsInSample_Adjusted <- tabla_mue$HouseholdsPerPSU_Adjusted * 
+                                          tabla_mue$PSUinSample 
+tabla_mue$PersonsInSample_Adjusted <- round(tabla_mue$HouseholdsInSample_Adjusted *  b * r) 
+
+tabla_mue$ajuste_perdida <- ((1-PM) * TR)
+  tabla_mue$n_personaXhogar <- b * r
+  tabla_mue$cve <- cve
+ 
+  tabla_mue$M <- M
+  tabla_mue$N <- N
+  
+  tabla_mue <- tabla_mue %>% relocate(cve)
+  tabla_mue <- tabla_mue %>% relocate(n_personaXhogar)
+  tabla_mue <- tabla_mue %>% relocate(ajuste_perdida)
+
+  tabla_mue <- tabla_mue %>% relocate(M)
+  tabla_mue <- tabla_mue %>% relocate(N)
+  tabla_mue
+  
+```
+
+
+Observe que el deff se ajusta.
+
+
+```{r}
+icc <- (3.86 - 1) / (nbarra_encuesta - 1) 
+deff_ajustado <- 1 + (6 * b * r - 1) * icc
+icc
+deff_ajustado
+```
+
+
+Se puede calcular en una sola linea como sigue:
+
+```{r}
+1 + (6 * b * r - 1) * ((deff - 1) / (nbarra_encuesta - 1) )
+```
+d
+Observemos la función inversa:
+
+```{r}
+# Hogares: 33875
+e4p(N = 2484855, n = 28031, P = 0.120, DEFF =  2.613351, conf = 0.95, plot = FALSE)
+```
+
+Observo que la función inversa funciona bien.
