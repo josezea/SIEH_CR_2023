@@ -1,0 +1,353 @@
+---
+title: "Tamaño de muestra encuesta de empleo y pobreza"
+author: "CEPAL"
+date: "2023-03-26"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introducción
+
+En este documento calculamos el tamaño de muestra necesario para los parámetros de la razón de desocupación y la proporción de pobreza extrema. Para desocupación el tamaño de muestra es definido trimestralmente, para pobreza extrema el tamaño de muestra se define anualmente. Durante el año se realizarán diferentes módulos de la encuesta y se implementa un tamaño de muestra 5-0-0, es decir un esquema en donde se visitan las UPM's seleccionadas durante 5 períodos consecutivos para desaparecer de la selección. Durante todos los trimestres se realiza el módulo de condiciones ocupacionales y la pobreza extrema se llevará a cabo en la primera y quinta visita del total de cinco visitas en que se realizará una UPM.
+
+El proceso llevará a cabo los siguientes pasos:
+
+1. Se calcula el tamaño de muestra para la razón de desocupación para cada levantamiento trimestral, esta tamaño debe satisfacer los requerimientos de precisión (coeficientes de variación, intervalos de confianza) establecidos por el INEC de Costa Rica. El tamaño de muestra se calcula a partir de la razón de desocupación de la Encuesta Continua de Empleo del tercer trimestre del año 2022, de esta encuesta se toma información del número de Unidades Primarias de Muestreo - UPM, Número de personas,  la razón de desoupación, el efecto diseño, el número de hogares por UPM, la perdida de muestra por el marco, la tasa de no respuesta, la proporción de personas que se les realizará la medición (producto de la proporción de personas mayores de 15 años (adultos) por el producto de personas economicamente activa de esta población de adultos), estos indicadores se disponen a nivel nacional por zona (urbana y rural) y región. 
+2. Se calcula el tamaño de muestra para la propoción de pobreza extrema para cada acumulación anual de manera que satisfaga los requerimientos de precisión establecidos por el INEC. De manera similar al proceso de cálculo del tamaño de muestra de hogares y UPM's el tamaño de muestra se calcula a partir de las estimaciones obtenida por la encuesta nacional de hogares - ENAHO del año 2022, de esta encuesta se obtiene la proporción de pobreza extrema, el efecto diseño, el número total de hogares y de UPM's, el efecto diseño, el promedio de hogares por UPMs, la tasa de perdida de muestra debida al marca, la tasa de no respuesta a nivel nacional de zona y región.
+3. Se evalúa si el tamaño de muestra de desocupación aplicado en la primera y quinta visita cubre el tamaño de muestra de pobreza extrema. En caso de satisfacer el tamaño de muestra de desocupación los requerimientos de tamaño de muestra para pobreza se calcula los parámetros de precisión obtenidos para la proporción de pobreza extrema. En caso negativo se plantearía utilizar el tamaño de muestra que satisfaga ambos requerimientos.
+4. Con el tamaño de muestra establecido se establece las rotaciones para 13 años del período intercensal.
+
+# Tamaño de muestra para desocupación
+Cargamos los paquetes y funciones necesarias para establecer el tamaño de muestra de las Unidades Primarias de Muestreo, el número de hogares y personas de manera transversal para el parámetro trazador de las condiciones ocupacionales:
+
+
+```{r, warning=FALSE, message=FALSE}
+library(samplesize4surveys)
+library(dplyr)
+library(readxl)
+library(writexl)
+library(flextable)
+```
+
+Cargamos también la función llamada f_tablaMue_desocupacion, esta función recibe como parámetros un dataframe cuyas filas corresponden a diferentes niveles de agregación (nacional, urbano, rural, y cada una de las 6 zonas establecidas en Costa Rica para el cálculo del tamaño de muestra). La tabla debe contener las siguientes variables:
+
+* Agregacion
+* N: el tamaño poblacional para cada nivel de agregación
+* M: el número de UPMs necesarios para cada nivel de agregación	
+* P: la razón de desocupación para cada nivel de agragación obtenida de la ECE 2022
+* r1: la proporción de personas mayores de 15 años en cada nivel de agragación
+* r2: la población economicamente activa de las personas mayores de 15 años
+* b: el promedio de número de vviendas por hogar
+* deff: el efecto diseño obtenido obtenida en la ECE 2022 para cada nivel de agregación
+* nro_vivXUPM;: el número promedio de viviendas/hogares realizadas en cada UPM para cada nivel de agregación.
+* PM: perdida de muestra debido a desactualizaciones del marco
+* TR: tasa de respuesta
+* conf: confiabilidad, en este caso se fija en 0.95
+
+Un segundo argumento es str_region, el cual es una cadena de texto que tiene el nivel de agregación deseado (por ejemplo Nacional, Zona_Urbana, Region_Central entre otras), un tercer argumento el cve, que es el coeficiente de variación deseado para cada nivel de agregación, finalmente m que es el número de viviendas/hogares que se desea realizar dentro de cada UPM en este caso 6.
+
+Esta función retorna uan tabla de muestreo donde se establecerá el tamaño de muestra de UPM's, de hogares, viviendas y personas tanto en el caso ideal de lograr 6 encuestas por UPM como en el caso de que se presenta no respuesta.
+
+```{r}
+source("funciones/f_tablaMue_desocupacion.R", encoding = "UTF-8")
+```
+
+
+Una vez cargados los paquetes y la función exportamos el archivo de parámetros para desocupación:
+
+```{r, warning=FALSE, message=FALSE}
+df_parametrostablas_desocupacion <- read_excel("../data/ParametrosTablasMuestreo_Desempleo.xlsx") 
+```
+
+
+El tamaño de muestra a nivel nacional debe satisfacer un coeficiente de variación menor al 3% y a nivel regional del 5%, según lo establecido por el INEC.
+
+## Tamaño de muestra de desempleo a nivel nacional
+
+Procedemos a calcular el tamaño de muestra a nivel de agregación nacional con un requerimiento de coeficiente de variación del 3% prreviamente establecido por el INEC:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_Nacional <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Nacional", 
+                                          cve = 0.03 , m = 6)
+```
+
+Se obtiene el siguiente tamaño de muestra, los valores ajustados se detallan en la hoja de cálculo tabla_desocup.xlsx de la carpeta outpu
+
+```{r}
+tabla_Nacional$n_personaXhogar <- round(tabla_Nacional$n_personaXhogar, 2)
+tabla_Nacional$ajuste_perdida <- round(tabla_Nacional$ajuste_perdida, 2)
+flextable(tabla_Nacional %>% select(PSUinSample, HouseholdsInSample, PersonsInSample))
+```
+
+Se deben realizar a nivel nacional 2.457 UPMs y 14.743 hogares para satisfacer los requerimientos a nivel nacional, para garantizar este tamaño a nivel de zona urbana y rural se realizará un procedimiento de optimización que permita encontrar los coeficientes de variación requeridos a nivel urbano y rural que permitan obtener 2.457 UPM's.
+
+Sin embargo el tamaño definitivo se establecerá cuando se revisen los requerimientos de tamaño de muestra a nivel regional (que satisfagan 5% de cve a nivel de cada región).
+
+## Tamaño de muestra de desempleo por regiones
+
+Calculamos el tamaño de muestra a nivel de regional que satisfaga un coeficiente de variación del 5% requerido por el INEC:
+
+```{r}
+cve_num <- 0.05 
+suma_psu <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Central", 
+                        cve = cve_num , m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Chorotega", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Pacifica_Central", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Brunca", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Huetar_Atlantico", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Huetar_Norte", 
+                        cve = cve_num, m = 6)$PSUinSample 
+
+```
+
+
+El tamaño de muestra necesario a nivel regional es:
+
+```{r}
+suma_psu
+```
+Este tamaño de muestra a nivel regional excede el tamaño de muestra a nivel nacional de 2457 UPMs. Por lo tanto a nivel nacional se considera un tamaño de muestra de 2.796 UPMs.         
+
+Con este tamaño se deberá buscar el tamaño de muestra a nivel de zona, guardamos los tamaños de muestra por región:
+
+
+```{r}
+tabla_regionCentral <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Central", 
+                        cve = cve_num , m = 6) 
+
+tabla_regionChorotega <-  f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Chorotega", 
+                        cve = cve_num, m = 6) 
+
+tabla_regionPacificaCentral <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Pacifica_Central", 
+                        cve = cve_num, m = 6) 
+
+
+tabla_regionBrunca <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Brunca", 
+                        cve = cve_num, m = 6) 
+
+tabla_regionHuetarAtlantico <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Huetar_Atlantico", 
+                        cve = cve_num, m = 6) 
+
+tabla_regionHuetarNorte <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                        str_region = "Region_Huetar_Norte", 
+                        cve = cve_num, m = 6) 
+
+```
+
+
+## Tamaño de muestra de desempleo por zona (urbana y rural)
+
+En primer lugar se construye una función que mimimiza la diferencia entre el número de UPM's que se tienen a nivel nacional y el que se obtendría al sumar el total de UPM's a nivel urbano y rural:
+  
+```{r, warning=FALSE, message=FALSE}
+f_optimizacion_cve_zona <- function(cve_param){
+  cve_num <- cve_param 
+  suma_psu <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                                      str_region = "Zona_Urbana", 
+                                      cve = cve_num , m = 6)$PSUinSample +
+    f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                            str_region = "Zona_Rural", 
+                            cve = cve_num, m = 6)$PSUinSample     
+  
+  return(abs(2796 - suma_psu))  
+}
+```
+
+Usar una grilla para encontrar el cve deseado óptimo para zona urbana y rural y coincida con el nacional, se busca una grilla entre el el coeficiente de variación del escenario nacional (0,03) y un valor alto 0.05 (que corresponden a los requerimientos a nivel regional). En primer lugar se busca un rango de posibles valores (candidatos) donde puede obtenerse el coeficiente de variación óptima y luego se refina nuevamente para obtener un coeficiente de variación requerido a nivel urbano y rural que satisfaga el tamaño de muestra nacional al sumar el tamaño de muestra obtenido en la zona urbana y rural:
+  
+  
+```{r, warning=FALSE, message=FALSE}
+grilla_zona <- seq(0.03, 0.05, by =  0.001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona(grilla_zona[i])
+}
+names(vctr_optim_zona) <- grilla_zona 
+
+# Descubrir un valle, mínimo
+candidatos <- vctr_optim_zona[rank(vctr_optim_zona) %in% 1:3] 
+distancias <- abs(lag(candidatos) - candidatos)
+LI <- ifelse(which.min(distancias) == 3, names(candidatos[2]) %>% as.numeric(), 
+             names(candidatos[1])) %>% as.numeric()  
+
+LS <- ifelse(which.min(distancias) == 3, names(candidatos[3]) %>% as.numeric(), 
+             names(candidatos[2])) %>% as.numeric() 
+
+
+grilla_zona <- seq(LI - 0.005, 
+                   LS + 0.005, by =  0.00001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona(grilla_zona[i])
+}
+names(vctr_optim_zona) <- grilla_zona 
+solucion_zona <- names(vctr_optim_zona[abs(vctr_optim_zona) <= 1]) %>% as.numeric()
+solucion_zona <- min(solucion_zona)
+```
+
+
+
+El tamaño de muestra por área urbano y rural es:
+  
+```{r}
+solucion_zona
+```
+
+Con este coeficiente de variación de 0,03626 se calculan las tablas de muestreo a nivel de zona urbano y rural:
+  
+```{r, warning=FALSE, message=FALSE}
+tabla_zonaUrbana <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Zona_Urbana", 
+                                            cve = solucion_zona,  m = 6)
+```
+
+El tamaño de muestra por área rural:
+  
+```{r, warning=FALSE, message=FALSE}
+tabla_zonaRural <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Zona_Rural",  
+                                           cve = solucion_zona,  m = 6)
+```
+
+Verificamos que existe coherencia en la zona urbana y rural:
+  
+```{r, warning=FALSE, message=FALSE}
+tabla_zonaUrbana$PSUinSample + tabla_zonaRural$PSUinSample
+```
+
+Se obtiene 2797 necesarias al sumar los dos tamaños de muestra que es muy cercano al tamaño de muestra obtenido a nviel nacional y regional que es 2,796.
+
+
+Se calculará el tamaño de muestra a nivel nacional con 2,797 UPMs y se evalua cuanto es su coeficiente de variación:,
+
+Para el cálculo del coeficiente de variación con este tamaño se debe calcular un efecto diseño, este efecto diseño requiere calcularse con 6 viviendas por UPM y no con el de la encuesta.
+
+```{r}
+nropersonas_original_region <- df_parametrostablas_desocupacion$nro_vivXUPM[1] * 
+  df_parametrostablas_desocupacion$b[1] *
+  df_parametrostablas_desocupacion$r1[1] * df_parametrostablas_desocupacion$r2[1]
+
+nuevo_deff_region <- 1 + (6 * df_parametrostablas_desocupacion$b[1] * 
+                          df_parametrostablas_desocupacion$r1[1] *
+                          df_parametrostablas_desocupacion$r2[1] - 1) *
+                           ((df_parametrostablas_desocupacion$deff[1] - 1) /                                     (nropersonas_original_region - 1))
+nuevo_deff_region
+```
+
+El coeficiente de variación a nivel nacional para garantizar un cve a nivel regional del 5% deberá ser:
+
+```{r}
+e4p(N = df_parametrostablas_desocupacion$N[1], 
+    n =  2797 * 6 * 
+      df_parametrostablas_desocupacion$b[1] * 
+    df_parametrostablas_desocupacion$r1[1] *
+     df_parametrostablas_desocupacion$r2[1], # numero de personas
+    P = df_parametrostablas_desocupacion$P[1], 
+    DEFF =  nuevo_deff_region, conf = 0.95, plot = FALSE)
+
+```
+
+Para el esencario nacional se deberá considerar un cve de 2,810689 de manera que se satisfagan los requerimientos regionales del 5% para la reazón de desocupación:
+
+```{r}
+tabla_Nacional <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Nacional", 
+                                          cve = 0.02810689 , m = 6)
+```
+
+
+Verificamos la coherencia del número de UPMs para el nivel nacional, por zona y regiones:
+
+```{r, warning=FALSE, message=FALSE}
+consulta_PSU <- data.frame(PSUinSample_Nacional = tabla_Nacional$PSUinSample,
+           PSUinSample_Zona = tabla_zonaUrbana$PSUinSample + tabla_zonaRural$PSUinSample,
+PSUinSample_Region = tabla_regionCentral$PSUinSample + tabla_regionChorotega$PSUinSample +
+tabla_regionPacificaCentral$PSUinSample + tabla_regionBrunca$PSUinSample +
+tabla_regionHuetarAtlantico$PSUinSample +
+  tabla_regionHuetarNorte$PSUinSample, check.names = F)
+flextable(consulta_PSU)
+```
+
+
+El tamaño de muestra considerado será de 2.797 a nivel nacional, urbano y regional. El número total de hogares a realizar es de 16.782 hogares: 
+
+```{r, eval = FALSE, echo = FALSE}
+2797 * 6
+```
+
+Considerando la no respuesta un total de 22.376 hogares:
+
+```{r, eval = FALSE, echo = FALSE}
+2797 * 8
+```
+
+
+Observemos los tamaños de UPMs para nacional, zona y región:
+
+```{r}
+tabla_Nacional$agregacion <- "Nacional"
+tabla_Nacional <- tabla_Nacional %>% relocate(agregacion)
+
+tabla_zona <- bind_rows(tabla_zonaUrbana, tabla_zonaRural)
+tabla_zona$agregacion <- c("Urbana", "Rural") 
+
+tabla_zona <- tabla_zona %>% relocate(agregacion)
+
+
+tabla_regiones <- bind_rows(tabla_regionCentral,
+tabla_regionChorotega,
+tabla_regionPacificaCentral,
+tabla_regionBrunca,
+tabla_regionHuetarAtlantico,
+tabla_regionHuetarNorte)
+
+tabla_regiones$agregacion <- c("Central", "Chorotega", "Pacifica Central",
+                               "Brunca", "Huetar Atlantico", "Huetar Norte") 
+
+tabla_regiones <- tabla_regiones %>% relocate(agregacion)
+```
+
+
+Guardamos la tabla de pobeza extrema:
+
+```{r}
+setwd("../output/1.TablaOptimizadaDesocupacion")
+tabla_desocup <- bind_rows(tabla_Nacional, tabla_zona, tabla_regiones)
+saveRDS(tabla_desocup, "tabla_desocup.Rds")
+writexl::write_xlsx(tabla_desocup, "tabla_desocup.xlsx")
+```
+
+
+Guardar las soluciones óptimas cve:
+
+```{r}
+cves_optimos <- c(0.03, solucion_zona, 0.05)
+names(cves_optimos) <- c("Nacional", "Zona", "Región")
+```
+
+```{r}
+setwd("../output/1.TablaOptimizadaDesocupacion")
+saveRDS(cves_optimos, "cves_optimos.Rds")
+```
+
+
+
