@@ -1,0 +1,124 @@
+---
+title: "Tamano de muestra"
+author: "José Fernando Zea"
+date: "2023-05-10"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Tamaño de muestra unificado para desocupación y pobreza extrema
+
+En esta sección se establece el tamaño necesario para satisfacer simultaneamente los requerimientos de precisión  requeridos para la proporción de desoocupación trimestralmente y la proporción de pobreza extrema (anual).
+
+Dado el esquema rotativo que se establecerá el tamaño de pobreza extrema se establecerá con la acumulación anual que se completará en la primera y quinta ronda del esquema rotativo definido.
+
+Se cargan los paquetes necesarios para  establecer el tamaño de muestra unificado:
+
+
+```{r, warning=FALSE, message=FALSE}
+library(readxl)
+library(dplyr)
+library(samplesize4surveys)
+library(flextable)
+```
+
+Requerimmos también crear una función que permita establecer el coeficiente de variación a partir del tamaño de muestra y los parámetros de muestreo, esta función sería una función inversa de la que se dispone para las tablas de muestreo.
+
+Recordemos que el coeficiente de correlación intraclásica puede ser calculado como:
+
+$$
+deff = 1 + (n-1) * ICC 
+$$
+En la anterior expresión ICC correspone al coeficiente de correlación intraclásica, la cual es una medida de homogeneidad de una variable de interés dentro de una UPM y n corresponde al promedio de hogares por UPM.
+
+Si se despeja el coeficiente de correlación intraclásica se puede obtener a partir del efecto diseño y el promedio de hogares que hay en cada UPM:
+
+$$
+ICC = \frac{deff-1}{n-1}
+$$
+
+El coeficiente de variación se puede obtener a partir del tamaño de muestra de las Unidades Secundarias de Muestreo y el efecto diseño.
+El efecto diseño sin embargo depende del coeficiente de correlación intraclásica de la encuesta y el promedio de hogares por UPM. Podemos calcular el coeficiente de correlación intraclásica a partir de la encuesta como sigue:
+
+
+$$
+ICC = \frac{deff_{old}-1}{n_{old}-1}
+$$
+En esta expresión $deff_{old}$ hace referencia al efecto diseño obtenido a partir de la ECE 2022 o la ENAHO 2022 para desocupación y pobreza extrema respectivamente.
+$n_{old}$ hace referencia por otro lado al número de hogares por UPM en estas dos encuestas.
+
+Una vez se dispone del coeficiente de correlación intraclásica puede calcularse el efecto diseño que se obtendría en un nuevo levantamiento a partir del coeficiente de correlación intraclásica y el número de hogares por UPM ($n_{new}$) que se considerarían para el nuevo levantamiento que para este caso será 6:
+
+
+$$
+deff_{new} = 1 + (n_{new}-1) \times ICC = 1 + (n_{new}-1) \times \frac{deff_{old}-1}{n_{old}-1} 
+$$
+
+La función que permite calcular el nuevo efecto diseño es:
+
+```{r}
+deff_new <- function(deff_old, n_old, n_new){
+  1 + (n_new-1) * ((deff_old - 1) / (n_old - 1)) 
+}
+```
+
+Ahora procedemos a integrar el tamaño de muestra para desocupación y pobreza extrema, en primer lugar leemos las tablas de muestreo de pobreza extrema y desocupación:
+
+```{r}
+setwd("../output/1.TablaOptimizadaPobrezaExtrema")
+tabla_PE <- readRDS("tabla_PE.Rds")
+```
+
+```{r}
+setwd("../output/1.TablaOptimizadaDesocupacion")
+tabla_desocup <- readRDS("tabla_desocup.Rds")
+```
+
+Leemos también los parámetros de ocupación y desocupación:
+
+
+```{r}
+df_parametrostablas_pobrezaExtrema <- read_excel("../data/ParametrosTablasMuestreo_PobrezaExtrema.xlsx")
+df_parametrostablas_desocupacion <- read_excel("../data/ParametrosTablasMuestreo_Desempleo.xlsx") 
+```
+
+
+Unificamos las tablas de muestreo de desocupación y pobreza, el tamaño de muestra de UPMS de desoupación y lo llevamos a anual (acumulación obtenida tras realizar la primera y quinta visita del esquema rotativo):
+
+```{r}
+# Seleccionad
+tabla_PE_reduc <- tabla_PE %>% select(agregacion, cve_PE = cve, 
+                    PSUinSample)
+
+tabla_desocup_reduc <- tabla_desocup %>% select(agregacion, cve_desocup = cve, 
+                    PSUinSample_desocup = PSUinSample)
+
+# Calculamos la acumulación en el año de desocupación que sería lo que se usaría en desocupación
+tabla_desocup_reduc$PSUinSample_desocup <- 24/15 * tabla_desocup_reduc$PSUinSample_desocup
+
+
+# Esta tabla esta llevada anualmente
+tabla_indicadores_pobreza_desocup <- inner_join(tabla_PE_reduc, tabla_desocup_reduc,
+                                                by = "agregacion")
+tabla_indicadores_pobreza_desocup$cve_desocup <- round(tabla_indicadores_pobreza_desocup$cve_desocup, 3)
+tabla_indicadores_pobreza_desocup$PSUinSample_desocup <- round(tabla_indicadores_pobreza_desocup$PSUinSample_desocup,0)
+
+tabla_indicadores_pobreza_desocup %>% flextable()
+```
+
+Observamos que el tamaño de muestra de desocupación cubriría el tamaño de muestra necesaria para pobreza extrema a nivel nacional y para las zonas urbanas y rurales.
+Para las zonas, se observa que la región central y Huetar norte no cubrirían los tamaños de desocupación no cubren los tamaños de pobreza que se obtuvieron para pobreza extrema, sin embargo es importante considerar que los tamaños que se obtuvieron para las regiones para pobreza extrema alcanzarían a garantizar un cve 5,3% y en los requerimientos del INEC se requiere cve's menores al 9%.
+
+Por lo tanto se analizará si los tamaños de muestra que brinda la acumulación anual de desocupación son suficientes para satsifecer los requerimientos de pobreza extrema del 9%.
+
+
+```{r}
+saveRDS(tabla_indicadores_pobreza_desocup, "../output/2.ArticulacionTamMuestra/tabla_indicadores_pobreza_desocup.Rds")
+```
+
+

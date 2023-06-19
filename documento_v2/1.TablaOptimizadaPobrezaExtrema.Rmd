@@ -1,0 +1,309 @@
+---
+title: "Tamaño de muestra pobreza extrema"
+author: "José Fernando Zea"
+date: "2023-05-10"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Calcular tamaño de muestra de pobreza
+
+Cargamos los paquetes, necesarios y funciones para calcular el tamaño de muestra de la propoción de pobreza extrema:
+
+```{r, warning=FALSE, message=FALSE}
+library(samplesize4surveys)
+library(dplyr)
+library(readxl)
+library(writexl)
+library(flextable)
+```
+
+Cargamos la función para calcular las tablas de muestreo para calcular pobreza extrema, Esta función recibe como parámetros un dataframe cuyas filas corresponden a diferentes niveles de agregación (nacional, urbano, rural, y cada una de las 6 zonas establecidas en Costa Rica para el cálculo del tamaño de muestra). 
+
+
+Leemos la tabla de parámetros de pobreza extrema. La tabla debe contener las siguientes variables:
+
+* Agregacion
+* N: el tamaño poblacional para cada nivel de agregación
+* M: el número de UPMs necesarios para cada nivel de agregación	
+* P: la razón de desocupación para cada nivel de agragación obtenida de la ENAHO 2022
+* r: 1, todos los hogares se utilizan para este cálculo.
+* b: 1, normalmente el númer de personas por hogar, pero el ejercicio se realiza a nivel de persona.
+* deff: el efecto diseño obtenido obtenida en la ENAHO 2022 para cada nivel de agregación
+* nro_vivXUPM;: el número promedio de viviendas/hogares realizadas en cada UPM para cada nivel de agregación.
+* PM: perdida de muestra debido a desactualizaciones del marco
+* TR: tasa de respuesta
+* conf: confiabilidad, en este caso se fija en 0.95
+
+Un segundo argumento es str_region, el cual es una cadena de texto que tiene el nivel de agregación deseado (por ejemplo Nacional, Zona_Urbana, Region_Central entre otras), un tercer argumento el cve, que es el coeficiente de variación deseado para cada nivel de agregación, finalmente m que es el número de viviendas/hogares que se desea realizar dentro de cada UPM en este caso  6.
+
+
+Esta función retorna uan tabla de muestreo donde se establecerá el tamaño de muestra de UPM's, de hogares y viviendas tanto en el caso ideal de lograr 6 encuestas por UPM como para el caso de que se presenta no respuesta.
+
+
+```{r pobrezaextrema}
+source("funciones/f_tablaMue_pobrezaExtrema.R")
+```
+
+Una vez cargados los paquetes y la función exportamos el archivo de parámetros para pobreza extrema:
+
+```{r}
+df_parametrostablas_pobrezaExtrema <- read_excel("../data/ParametrosTablasMuestreo_PobrezaExtrema.xlsx")
+```
+
+
+El tamaño de muestra a nivel nacional debe satisfacer un coeficiente de variación menor al 2,5% y a nivel regional del 9%, según lo establecido por el INEC para la pobreza extrema.
+
+## Tamaño de muestra de desempleo a nivel nacional
+
+Procedemos a calcular el tamaño de muestra a nivel de agregación nacional con un requerimiento de coeficiente de variación del 2,5% prreviamente establecido por el INEC:
+
+
+```{r, warning=FALSE, message=FALSE}
+tabla_Nacional_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas = df_parametrostablas_pobrezaExtrema, 
+          str_region = "Nacional", cve = 0.025, m = 6)
+```
+
+Se obtiene el siguiente tamaño de muestra:
+
+```{r}
+flextable(tabla_Nacional_PE %>% select(PSUinSample, HouseholdsInSample, PersonsInSample))
+```
+
+Se deben realizar a nivel nacional 4.390 UPMs y 26.337 hogares para satisfacer los requerimientos a nivel nacional para medir pobreza extrema, para garantizar este tamaño a nivel de zona urbana y rural se realizará un procedimiento de optimización que permita encontrar los coeficientes de variación requeridos a nivel urbano y rural que permitan obtener 4.390 UPM's.
+
+Se realiza la optimización del cve para la zona urbano y rural:
+
+```{r, warning=FALSE, message=FALSE}
+f_optimizacion_cve_zona <- function(cve_param){
+cve_num <- cve_param 
+suma_psu <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Zona_Urbana", 
+                        cve = cve_num , m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Zona_Rural", 
+                        cve = cve_num, m = 6)$PSUinSample     
+
+return(abs(tabla_Nacional_PE$PSUinSample - suma_psu))  
+}
+```
+
+Usar una grilla para encontrar el cve deseado óptimo para zona urbana y rural y coincida con el coeficiente de variación a nivel nacional (2.5%)
+
+```{r, warning=FALSE, message=FALSE}
+grilla_zona <- seq(0.025, 0.05, by =  0.001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona(grilla_zona[i])
+}
+names(vctr_optim_zona) <- grilla_zona 
+
+# Descubrir un valle, mínimo
+candidatos <- vctr_optim_zona[rank(vctr_optim_zona) %in% 1:3] 
+distancias <- abs(lag(candidatos) - candidatos)
+LI <- ifelse(which.min(distancias) == 3, names(candidatos[2]) %>% as.numeric(), 
+             names(candidatos[1])) %>% as.numeric()  
+
+LS <- ifelse(which.min(distancias) == 3, names(candidatos[3]) %>% as.numeric(), 
+             names(candidatos[2])) %>% as.numeric() 
+
+
+grilla_zona <- seq(LI - 0.005, 
+                   LS + 0.005, by =  0.00001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona(grilla_zona[i])
+}
+names(vctr_optim_zona) <- grilla_zona 
+solucion_zona <- names(vctr_optim_zona[abs(vctr_optim_zona) <= 1]) %>% as.numeric()
+solucion_zona <- min(solucion_zona)
+```
+
+El coeficiente de variación que se debe establecer a nivel de zona urbana y rural es de 3,3396%, se calcula con este cve el tamaño de muestra a nivel de área:
+
+El tamaño de muestra por área urbano:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_zonaUrbana_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Zona_Urbana", cve = solucion_zona,  m = 6)
+flextable(tabla_zonaUrbana_PE %>% select(PSUinSample, HouseholdsInSample, PersonsInSample))
+```
+
+El tamaño de muestra por área rural:
+
+```{r, warning=FALSE, message=FALSE}
+ tabla_zonaRural_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Zona_Rural",  cve = solucion_zona,  m = 6)
+flextable(tabla_zonaRural_PE %>% select(PSUinSample, HouseholdsInSample, PersonsInSample))
+```
+
+Verificamos la coherencia por área:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_zonaUrbana_PE$PSUinSample + tabla_zonaRural_PE$PSUinSample
+```
+
+Se deben realizar 4.391 en el urbanas y rurales que es una encuenta más que las 4.390 que se obtuvo a nivel nacional.
+
+A continuación verificamos que coeficiente de variación es requerido para alcanzar el tamaño de muestra a nivel nacional de UPMs (4.391):
+
+# Tamaño de muestra de desempleo por regiones
+
+Se realiza la optimización del cve para las regiones:
+
+```{r, warning=FALSE, message=FALSE}
+f_optimizacion_cve_region <- function(cve_param){
+cve_num <- cve_param 
+suma_psu <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Central", 
+                        cve = cve_num , m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Chorotega", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Pacifica_Central", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Brunca", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Huetar_Atlantico", 
+                        cve = cve_num, m = 6)$PSUinSample +
+f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                        str_region = "Region_Huetar_Norte", 
+                        cve = cve_num, m = 6)$PSUinSample 
+return(abs(tabla_Nacional_PE$PSUinSample - suma_psu))  
+}
+```
+
+Usar una grilla para encontrar el cve deseado óptimo para regiones y coincida con el nacional y el de zona:
+
+```{r, warning=FALSE, message=FALSE}
+grilla_region <- seq(0.025, 0.06, by =  0.001)
+
+vctr_optim_region <- length(seq_along(grilla_region))
+for( i in seq_along(grilla_region) ){
+  vctr_optim_region[i] <- f_optimizacion_cve_region(grilla_region[i])
+}
+names(vctr_optim_region) <- grilla_region 
+##solucion_region <- candidatos[2] %>% names() %>% as.numeric()
+
+# # Descubrir un valle, mínimo
+candidatos <- vctr_optim_region[rank(vctr_optim_region) %in% 1:3] 
+distancias <- abs(lag(candidatos) - candidatos)
+LI <- ifelse(which.min(distancias) == 3, names(candidatos[2]) %>% as.numeric(),
+             names(candidatos[1]))  %>% as.numeric()
+
+LS <- ifelse(which.min(distancias) == 3, names(candidatos[3]) %>% as.numeric(),
+             names(candidatos[2])) %>% as.numeric()
+
+
+grilla_region <- seq(LI - 0.005,
+                   LS + 0.005, by =  0.00001)
+
+vctr_optim_region <- length(seq_along(grilla_region))
+for( i in seq_along(grilla_region) ){
+  vctr_optim_region[i] <- f_optimizacion_cve_region(grilla_region[i])
+}
+names(vctr_optim_region) <- grilla_region 
+solucion_region <- names(vctr_optim_region[abs(vctr_optim_region) <= 1]) %>% as.numeric()
+solucion_region <- min(solucion_region)
+```
+
+El coeficiente de variación por región que se encuentra a nivel regional es de 5,327:
+
+```{r}
+solucion_region
+```
+
+
+El tamaño de muestra necesario para alcanzar un cve de 2,5 a nivel nacional se calcula para cada una de las zonas:
+
+```{r, warning=FALSE, message=FALSE}
+tabla_regionCentral_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Central", cve = solucion_region, m = 6)
+tabla_regionChorotega_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Chorotega", solucion_region, m = 6)
+tabla_regionPacificaCentral_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Pacifica_Central", solucion_region, m = 6)
+tabla_regionBrunca_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                                              "Region_Brunca",
+                                              solucion_region, m = 6)
+tabla_regionHuetarAtlantico_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Huetar_Atlantico", solucion_region, m = 6)
+tabla_regionHuetarNorte_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Huetar_Norte", solucion_region, m = 6)
+```
+
+Verificamos la coherencia del número de UPMs obtenidos en las 6 zonas y el número de UPM's obtenidas a nivel nacional:
+
+```{r, warning=FALSE, message=FALSE}
+consulta_PSU <- data.frame(PSUinSample_Nacional = tabla_Nacional_PE$PSUinSample,
+           PSUinSample_Zona = tabla_zonaUrbana_PE$PSUinSample + tabla_zonaRural_PE$PSUinSample,
+PSUinSample_Region = tabla_regionCentral_PE$PSUinSample + tabla_regionChorotega_PE$PSUinSample +
+tabla_regionPacificaCentral_PE$PSUinSample + tabla_regionBrunca_PE$PSUinSample +
+tabla_regionHuetarAtlantico_PE$PSUinSample + tabla_regionHuetarNorte_PE$PSUinSample, check.names = F)
+flextable::flextable(consulta_PSU)
+```
+
+El tamaño de muestra necesario para un año deberá ser de 4.391 a nivel nacional, urbano y regional. El número total de hogares a realizar es de 26.346 hogares
+
+```{r, eval = FALSE, echo = FALSE}
+4391 * 6
+```
+
+
+Consolidamos los tamaños de UPMs para nacional, zona y región:
+
+```{r}
+tabla_Nacional_PE$agregacion <- "Nacional"
+tabla_Nacional_PE <- tabla_Nacional_PE %>% relocate(agregacion)
+
+tabla_zona_PE <- bind_rows(tabla_zonaUrbana_PE, tabla_zonaRural_PE)
+tabla_zona_PE$agregacion <- c("Urbana", "Rural") 
+
+tabla_zona_PE <- tabla_zona_PE %>% relocate(agregacion)
+
+
+tabla_regiones <- bind_rows(tabla_regionCentral_PE,
+tabla_regionChorotega_PE,
+tabla_regionPacificaCentral_PE,
+tabla_regionBrunca_PE,
+tabla_regionHuetarAtlantico_PE,
+tabla_regionHuetarNorte_PE)
+
+tabla_regiones$agregacion <- c("Central", "Chorotega", "Pacifica Central",
+                               "Brunca", "Huetar Atlantico", "Huetar Norte") 
+
+tabla_regiones <- tabla_regiones %>% relocate(agregacion)
+flextable(tabla_regiones %>% select(agregacion, PSUinSample, HouseholdsInSample, PersonsInSample))
+```
+
+
+Guardamos la tabla de pobeza extrema nacional y a nivel de los dominios de zona y región:
+
+```{r}
+tabla_PE <- bind_rows(tabla_Nacional_PE, tabla_zona_PE, tabla_regiones)
+flextable(tabla_PE %>% select(agregacion, PSUinSample, HouseholdsInSample, PersonsInSample))
+```
+
+Los detalles de estos tamaños se pueden ver en la carpeta output en la hoja de cálculo "tabla_PE.xlsx".
+```{r}
+setwd("../output/1.TablaOptimizadaPobrezaExtrema")
+saveRDS(tabla_PE, "tabla_PE.Rds")
+writexl::write_xlsx(tabla_PE, "tabla_PE.xlsx")
+```
+
+
+Guardamos también las soluciones óptimas para zona y región de los coeficientes de variación:
+
+```{r}
+cves_optimos <- c(df_parametrostablas_pobrezaExtrema$cve_original[1], solucion_zona, solucion_region)
+names(cves_optimos) <- c("Nacional", "Zona", "Región")
+```
+
+```{r}
+setwd("../output/1.TablaOptimizadaPobrezaExtrema")
+saveRDS(cves_optimos, "cves_optimos.Rds")
+```
+
