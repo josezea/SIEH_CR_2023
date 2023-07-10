@@ -1,0 +1,552 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: "2023-06-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(samplesize4surveys)
+library(readxl)
+deff_new <- function(deff_old, n_old, n_new){
+  1 + (n_new-1) * ((deff_old - 1) / (n_old - 1)) 
+}
+```
+
+
+```{r pobrezaextrema}
+source("funciones/f_tablaMue_desocupacion.R")
+source("funciones/f_tablaMue_pobrezaExtrema.R")
+
+```
+
+```{r}
+setwd("../data")
+
+df_parametrostablas_pobrezaExtrema <- read_xlsx("ParametrosTablasMuestreo_PobrezaExtrema.xlsx")
+
+df_parametrostablas_desocupacion <- read_xlsx("ParametrosTablasMuestreo_Desempleo.xlsx")
+```
+
+```{r}
+setwd("../output/2.ArticulacionTamMuestra/")
+tabla_indicadores_pobreza_desocup <- readRDS("tabla_indicadores_pobreza_desocup.Rds")
+```
+
+
+El tamaño de muestra obtenido en la región central y Huetar norte no se alcanza el tamaño de muestra necesario para el tamaño de muestra anual de pobreza extrema.
+
+Consideramos un tamaño de muestra combinado para desocupación y pobreza extrema:
+
+Para pobreza extrema: Para todas las regiones se conserva el tamaño de muestra de desocupación con excepción de las regiones Central y Huetar Norte que conservarán como tamaño de muestra el tamaño mínimo sugerido para pobreza extrema:
+
+```{r}
+tabla_indicadores_pobrezaDesocup_Region <- tabla_indicadores_pobreza_desocup %>% 
+  filter(agregacion  %in% c("Central", "Chorotega", "Pacifica Central", 
+"Brunca", "Huetar Atlantico", "Huetar Norte"))
+
+psuinsample_pobreza <- ifelse(tabla_indicadores_pobrezaDesocup_Region$agregacion %in%
+                                c("Chorotega", "Pacifica Central", 
+                                  "Brunca", "Huetar Atlantico"), 
+                       tabla_indicadores_pobrezaDesocup_Region$PSUinSample_desocup,
+                       tabla_indicadores_pobrezaDesocup_Region$PSUinSample)
+
+df_pobrezaAnualRegion <- data.frame(agregacion = tabla_indicadores_pobrezaDesocup_Region$agregacion,                               PSUinSample = psuinsample_pobreza)
+```
+
+Calculamos el coeficiente de variación:
+
+```{r}
+df_parametrostablas_pobrezaExtrema_region <- 
+  df_parametrostablas_pobrezaExtrema %>% filter(Agregacion %in%   
+            c("Region_Central", "Region_Chorotega", "Region_Pacifica_Central", 
+              "Region_Brunca", "Region_Huetar_Atlantico", "Region_Huetar_Norte"))
+
+nuevo_deff <- deff_new(deff_old = df_parametrostablas_pobrezaExtrema_region$deff,
+                                n_old = df_parametrostablas_pobrezaExtrema_region$nro_vivXUPM, 
+                                n_new = 6)
+
+# cve multiplicado por 100
+df_pobrezaAnualRegion$cve <- e4p(N = df_parametrostablas_pobrezaExtrema_region$N, 
+    n =  df_pobrezaAnualRegion$PSUinSample * 6, 
+    P = df_parametrostablas_pobrezaExtrema_region$P, 
+    DEFF =  nuevo_deff, conf = 0.95, plot = FALSE)$cve
+```
+
+
+Con estos insumos calculamos las tablas de muestreo:
+
+```{r}
+tabla_Central_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Central",
+cve = df_pobrezaAnualRegion$cve[df_pobrezaAnualRegion$agregacion == "Central"] / 100,                         m = 6)
+
+tabla_Chorotega_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Chorotega",
+cve = df_pobrezaAnualRegion$cve[df_pobrezaAnualRegion$agregacion == "Chorotega"] / 100, m = 6)
+
+tabla_PacificaCentral_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Pacifica_Central",
+cve = df_pobrezaAnualRegion$cve[df_pobrezaAnualRegion$agregacion == "Pacifica Central"] / 100, m = 6)
+
+
+tabla_Brunca_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Brunca",
+cve = df_pobrezaAnualRegion$cve[df_pobrezaAnualRegion$agregacion == "Brunca"] / 100,
+m = 6)
+
+
+tabla_HuetarAtlantico_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Huetar_Atlantico",
+cve = df_pobrezaAnualRegion$cve[df_pobrezaAnualRegion$agregacion == "Huetar Atlantico"] / 100, m = 6)
+
+tabla_HuetarNorte_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Huetar_Norte",
+cve = df_pobrezaAnualRegion$cve[df_pobrezaAnualRegion$agregacion == "Huetar Norte"] / 100, m = 6)
+
+tabla_Regiones_PE <- bind_rows(
+tabla_Central_PE,
+tabla_Chorotega_PE,
+tabla_PacificaCentral_PE,
+tabla_Brunca_PE,
+tabla_HuetarAtlantico_PE,
+tabla_HuetarNorte_PE)
+```
+
+
+
+# Tamaño de muestra a nivel nacional
+Se calcula el tamaño de muestra a nivel nacional:
+
+```{r}
+df_pobrezaAnualNacional <- data.frame(agregacion = "Nacional", 
+                                      PSUinSample = sum(df_pobrezaAnualRegion$PSUinSample),
+                            cve = NA)
+
+nuevo_deff_nacional <- deff_new(deff_old = df_parametrostablas_pobrezaExtrema$deff[1],
+                                n_old = df_parametrostablas_pobrezaExtrema$nro_vivXUPM[1], 
+                                n_new = 6)
+  
+df_pobrezaAnualNacional$cve <- e4p(N = df_parametrostablas_pobrezaExtrema$N[1], 
+    n =  df_pobrezaAnualNacional$PSUinSample * 6, 
+    P = df_parametrostablas_pobrezaExtrema$P[1], 
+    DEFF =  nuevo_deff_nacional, conf = 0.95, plot = FALSE)$cve
+```
+
+Calculamos la tabla de muestreo para nacional:
+
+
+```{r}
+
+tabla_Nacional_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema,
+                          "Nacional",
+cve = df_pobrezaAnualNacional$cve / 100, m = 6)
+```
+
+
+
+# Tamaño de muestra a nivel de zona
+
+
+Se optimiza el coeficiente de variación para el área urbana y rural:
+
+```{r, warning=FALSE, message=FALSE}
+f_optimizacion_cve_zona <- function(cve_param){
+  cve_num <- cve_param 
+  suma_psu <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                                      str_region = "Zona_Urbana", 
+                                      cve = cve_num , m = 6)$PSUinSample +
+    f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, 
+                            str_region = "Zona_Rural", 
+                            cve = cve_num, m = 6)$PSUinSample     
+  # 5.341
+  return(abs(df_pobrezaAnualNacional$PSUinSample - suma_psu))  
+}
+```
+
+Usar una grilla para encontrar el cve deseado óptimo para zona urbana y rural y coincida con el nacional, se busca una grilla entre el el coeficiente de variación del escenario nacional (0,03) y un valor alto 0.05 (que corresponden a los requerimientos a nivel regional). En primer lugar se busca un rango de posibles valores (candidatos) donde puede obtenerse el coeficiente de variación óptima y luego se refina nuevamente para obtener un coeficiente de variación requerido a nivel urbano y rural que satisfaga el tamaño de muestra nacional al sumar el tamaño de muestra obtenido en la zona urbana y rural:
+  
+  
+```{r, warning=FALSE, message=FALSE}
+grilla_zona <- seq(0.0226, 0.05, by =  0.001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona(grilla_zona[i])
+}
+
+names(vctr_optim_zona) <- grilla_zona 
+
+# Descubrir un valle, mínimo
+candidatos <- vctr_optim_zona[rank(vctr_optim_zona) %in% 1:3] 
+distancias <- abs(lag(candidatos) - candidatos)
+LI <- ifelse(which.min(distancias) == 3, names(candidatos[2]) %>% as.numeric(), 
+             names(candidatos[1])) %>% as.numeric()  
+
+LS <- ifelse(which.min(distancias) == 3, names(candidatos[3]) %>% as.numeric(), 
+             names(candidatos[2])) %>% as.numeric() 
+
+
+grilla_zona <- seq(LI - 0.005, 
+                   LS + 0.005, by =  0.00001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona(grilla_zona[i])
+}
+names(vctr_optim_zona) <- grilla_zona 
+solucion_zona <- names(vctr_optim_zona[abs(vctr_optim_zona) <= 1]) %>% as.numeric()
+solucion_zona <- min(solucion_zona)
+```
+
+
+Calculamos la tabla de muestreo a nivel de área:
+
+```{r}
+tabla_zonaUrbana_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Zona_Urbana",
+                                                 cve = solucion_zona,  m = 6)
+
+tabla_zonaRural_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Zona_Rural",
+                                                cve = solucion_zona,  m = 6)
+
+tabla_zona_PE <- bind_rows(tabla_zonaUrbana_PE, tabla_zonaRural_PE)
+```
+
+
+La tabla a nivel regional se realiza con un úmero de encuestas de 8 para hacerlo consistente con la tabla nacional y de zona
+
+
+```{r}
+tabla_Regiones_PE$HouseholdsPerPSU_Adjusted <- 8
+
+tabla_Regiones_PE$HouseholdsInSample_Adjusted <- tabla_Regiones_PE$HouseholdsPerPSU_Adjusted * tabla_Regiones_PE$PSUinSample
+```
+
+
+```{r}
+tabla_zona_PE$HouseholdsPerPSU_Adjusted <- 8
+
+tabla_zona_PE$HouseholdsInSample_Adjusted <- tabla_zona_PE$HouseholdsPerPSU_Adjusted * tabla_zona_PE$PSUinSample
+```
+
+
+Unificar las tablas de muestreo y conservar las variables:
+
+```{r}
+tabla_resultado_PE <- bind_rows(tabla_Nacional_PE,
+                                tabla_zona_PE,
+                                tabla_Regiones_PE)
+tabla_resultado_PE$PersonsInSample <- NULL
+```
+
+Calculamos la agregación y P:
+
+```{r}
+tabla_resultado_PE$agregacion <- df_parametrostablas_pobrezaExtrema$Agregacion
+tabla_resultado_PE$P <- df_parametrostablas_pobrezaExtrema$P
+```
+
+
+Calculamos los intervalos de confianza:
+
+```{r}
+tabla_resultado_PE$conf <- df_parametrostablas_pobrezaExtrema$conf
+alpha <- 1- tabla_resultado_PE$conf
+z <- qnorm(1-alpha/2)
+tabla_resultado_PE$LI <- tabla_resultado_PE$P - z * (tabla_resultado_PE$cve) * tabla_resultado_PE$P
+tabla_resultado_PE$LS <- tabla_resultado_PE$P + z * (tabla_resultado_PE$cve) * tabla_resultado_PE$P
+```
+
+Organizamos los resultados:
+
+```{r}
+tabla_resultado_PE <- tabla_resultado_PE %>% select(agregacion,PSUinSample,
+                                                   HouseholdsPerPSU,
+                                                   HouseholdsInSample,
+                              HouseholdsPerPSU_Adjusted,HouseholdsInSample_Adjusted,
+                              N, M, P, ajuste_perdida, cve, conf, LI, LS
+                            )
+```
+
+
+```{r}
+setwd("../output/3.ArticulacionTamMuestraAjustado")
+writexl::write_xlsx(tabla_resultado_PE, "tabla_resultado_PE.xlsx")
+```
+
+Comprobación tamaños:
+
+```{r}
+tabla_resultado_PE$PSUinSample[1]
+tabla_resultado_PE$PSUinSample[2] + tabla_resultado_PE$PSUinSample[3]
+
+tabla_resultado_PE$PSUinSample[4] + 
+  tabla_resultado_PE$PSUinSample[5] + tabla_resultado_PE$PSUinSample[6] +
+  tabla_resultado_PE$PSUinSample[7] + tabla_resultado_PE$PSUinSample[8 ] + 
+  tabla_resultado_PE$PSUinSample[9]
+
+
+```
+
+
+
+# Tamaño de muestra desocupación
+
+También calculamos el tamaño de muestra para la desocupación:
+
+```{r}
+psuinsample_desocupacion <- round(psuinsample_pobreza * 15/24)
+```
+
+# Tamaño de muestra a nivel regional
+
+```{r}
+df_DesocupacionRegion <- data.frame(agregacion = tabla_indicadores_pobrezaDesocup_Region$agregacion,                               PSUinSample = psuinsample_desocupacion)
+```
+
+
+Calculamos el coeficiente de variación:
+
+```{r}
+df_parametrostablas_desocupacion_region <- 
+  df_parametrostablas_desocupacion %>% filter(Agregacion %in%   
+            c("Region_Central", "Region_Chorotega", "Region_Pacifica_Central", 
+              "Region_Brunca", "Region_Huetar_Atlantico", "Region_Huetar_Norte"))
+
+nuevo_deff_desoc <- deff_new(deff_old = df_parametrostablas_desocupacion_region$deff,
+                    n_old = df_parametrostablas_desocupacion_region$nro_vivXUPM, 
+                    n_new = 6)
+
+# cve multiplicado por 100
+df_DesocupacionRegion$cve <- e4p(N = df_parametrostablas_desocupacion_region$N, 
+    n =  df_DesocupacionRegion$PSUinSample * 6 * df_parametrostablas_desocupacion_region$r1 * df_parametrostablas_desocupacion_region$r2 * 
+      df_parametrostablas_desocupacion_region$b, 
+    P = df_parametrostablas_desocupacion_region$P, 
+    DEFF =  nuevo_deff_desoc, conf = 0.95, plot = FALSE)$cve
+```
+
+
+
+
+Con estos insumos calculamos las tablas de muestreo:
+
+```{r}
+tabla_Central_desocup <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Central",
+cve = df_DesocupacionRegion$cve[df_DesocupacionRegion$agregacion == "Central"] / 100,                         m = 6)
+
+tabla_Chorotega_desocup <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Chorotega",
+cve = df_DesocupacionRegion$cve[df_DesocupacionRegion$agregacion == "Chorotega"] / 100, m = 6)
+
+tabla_PacificaCentral_desocup <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Pacifica_Central",
+cve = df_DesocupacionRegion$cve[df_DesocupacionRegion$agregacion == "Pacifica Central"] / 100, m = 6)
+
+
+tabla_Brunca_desocup <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Brunca",
+cve = df_DesocupacionRegion$cve[df_DesocupacionRegion$agregacion == "Brunca"] / 100,
+m = 6)
+
+
+tabla_HuetarAtlantico_desocup <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Huetar_Atlantico",
+cve = df_DesocupacionRegion$cve[df_DesocupacionRegion$agregacion == "Huetar Atlantico"] / 100, m = 6)
+
+tabla_HuetarNorte_desocup <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Region_Huetar_Norte",
+cve = df_DesocupacionRegion$cve[df_DesocupacionRegion$agregacion == "Huetar Norte"] / 100, m = 6)
+
+tabla_Regiones_desoc <- bind_rows(
+tabla_Central_desocup,
+tabla_Chorotega_desocup,
+tabla_PacificaCentral_desocup,
+tabla_Brunca_desocup,
+tabla_HuetarAtlantico_desocup,
+tabla_HuetarNorte_desocup)
+```
+
+
+
+# Tamaño de muestra a nivel nacional
+Se calcula el tamaño de muestra a nivel nacional:
+
+```{r}
+df_DesocupacionNacional <- data.frame(agregacion = "Nacional", 
+                                      PSUinSample = sum(df_DesocupacionRegion$PSUinSample),
+                            cve = NA)
+
+nuevo_deff_nacional_desoc <- deff_new(deff_old = df_parametrostablas_desocupacion$deff[1],
+                                n_old = df_parametrostablas_desocupacion$nro_vivXUPM[1], 
+                                n_new = 6)
+  
+df_DesocupacionNacional$cve <- e4p(N = df_parametrostablas_desocupacion$N[1], 
+    n =  df_DesocupacionNacional$PSUinSample * 6 *
+      df_parametrostablas_desocupacion$r1[1] * 
+      df_parametrostablas_desocupacion$r2[1] * 
+      df_parametrostablas_desocupacion$b[1], 
+    P = df_parametrostablas_desocupacion$P[1], 
+    DEFF =  nuevo_deff_nacional_desoc, conf = 0.95, plot = FALSE)$cve
+```
+
+Calculamos la tabla de muestreo para nacional:
+
+
+```{r}
+
+tabla_Nacional_desoc <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion,
+                          "Nacional",
+cve = df_DesocupacionNacional$cve / 100, m = 6)
+```
+
+
+
+# Tamaño de muestra a nivel de zona
+
+
+Se optimiza el coeficiente de variación para el área urbana y rural:
+
+```{r, warning=FALSE, message=FALSE}
+f_optimizacion_cve_zona_desocup <- function(cve_param){
+  cve_num <- cve_param 
+  suma_psu <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                                      str_region = "Zona_Urbana", 
+                                      cve = cve_num , m = 6)$PSUinSample +
+    f_tablaMue_desocupacion(df_parametrostablas_desocupacion, 
+                            str_region = "Zona_Rural", 
+                            cve = cve_num, m = 6)$PSUinSample     
+  # 3.338
+  return(abs(tabla_Nacional_desoc$PSUinSample - suma_psu))  
+}
+```
+
+Usar una grilla para encontrar el cve deseado óptimo para zona urbana y rural y coincida con el nacional, se busca una grilla entre el el coeficiente de variación del escenario nacional (0,03) y un valor alto 0.05 (que corresponden a los requerimientos a nivel regional). En primer lugar se busca un rango de posibles valores (candidatos) donde puede obtenerse el coeficiente de variación óptima y luego se refina nuevamente para obtener un coeficiente de variación requerido a nivel urbano y rural que satisfaga el tamaño de muestra nacional al sumar el tamaño de muestra obtenido en la zona urbana y rural:
+  
+  
+```{r, warning=FALSE, message=FALSE}
+grilla_zona <- seq(0.02549336, 0.05, by =  0.001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona_desocup(grilla_zona[i])
+}
+
+names(vctr_optim_zona) <- grilla_zona 
+
+# Descubrir un valle, mínimo
+candidatos <- vctr_optim_zona[rank(vctr_optim_zona) %in% 1:3] 
+distancias <- abs(lag(candidatos) - candidatos)
+LI <- ifelse(which.min(distancias) == 3, names(candidatos[2]) %>% as.numeric(), 
+             names(candidatos[1])) %>% as.numeric()  
+
+LS <- ifelse(which.min(distancias) == 3, names(candidatos[3]) %>% as.numeric(), 
+             names(candidatos[2])) %>% as.numeric() 
+
+
+grilla_zona <- seq(LI - 0.005, 
+                   LS + 0.005, by =  0.00001)
+
+vctr_optim_zona <- length(seq_along(grilla_zona))
+for( i in seq_along(grilla_zona) ){
+  vctr_optim_zona[i] <- f_optimizacion_cve_zona_desocup(grilla_zona[i])
+}
+names(vctr_optim_zona) <- grilla_zona 
+solucion_zona <- names(vctr_optim_zona[abs(vctr_optim_zona) <= 1]) %>% as.numeric()
+solucion_zona <- min(solucion_zona)
+```
+
+
+Calculamos la tabla de muestreo a nivel de área:
+
+```{r}
+tabla_zonaUrbana_desoc <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Zona_Urbana", cve = solucion_zona,  m = 6)
+
+tabla_zonaRural_desoc <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion, "Zona_Rural", cve = solucion_zona,  m = 6)
+
+tabla_zona_desoc <- bind_rows(tabla_zonaUrbana_desoc, tabla_zonaRural_desoc)
+tabla_zona_desoc$PSUinSample %>% sum()
+```
+
+
+
+La tabla a nivel regional se realiza con un úmero de encuestas de 8 para hacerlo consistente con la tabla nacional y de zona
+
+
+```{r}
+tabla_Regiones_desoc$HouseholdsPerPSU_Adjusted <- 8
+
+tabla_Regiones_desoc$HouseholdsInSample_Adjusted <- tabla_Regiones_desoc$HouseholdsPerPSU_Adjusted * tabla_Regiones_desoc$PSUinSample
+# 
+# tabla_Regiones_desoc$PersonsInSample_Adjusted <- 
+#   round(tabla_Regiones_desoc$HouseholdsInSample_Adjusted *  
+#           df_parametrostablas_desocupacion_region$b *
+#           df_parametrostablas_desocupacion_region$r1 *
+#           df_parametrostablas_desocupacion_region$r2
+#                     ) 
+
+```
+
+
+```{r}
+tabla_zona_desoc$HouseholdsPerPSU_Adjusted <- 8
+
+tabla_zona_desoc$HouseholdsInSample_Adjusted <- tabla_zona_desoc$HouseholdsPerPSU_Adjusted * tabla_zona_desoc$PSUinSample
+```
+
+
+Unificar las tablas de muestreo y conservar las variables:
+
+```{r}
+tabla_resultado_desoc <- bind_rows(tabla_Nacional_desoc,
+                                tabla_zona_desoc,
+                                tabla_Regiones_desoc)
+```
+
+Calculamos la agregación y P:
+
+```{r}
+tabla_resultado_desoc$agregacion <- df_parametrostablas_desocupacion$Agregacion
+tabla_resultado_desoc$P <- df_parametrostablas_desocupacion$P
+```
+
+
+Calculamos los intervalos de confianza:
+
+```{r}
+tabla_resultado_desoc$conf <- df_parametrostablas_desocupacion$conf
+alpha <- 1- tabla_resultado_desoc$conf
+z <- qnorm(1-alpha/2)
+tabla_resultado_desoc$LI <- tabla_resultado_desoc$P - z * (tabla_resultado_desoc$cve) * tabla_resultado_desoc$P
+
+tabla_resultado_desoc$LS <- tabla_resultado_desoc$P + z * (tabla_resultado_desoc$cve) * tabla_resultado_desoc$P
+```
+
+Organizamos los resultados:
+
+```{r}
+tabla_resultado_desoc <- tabla_resultado_desoc %>% select(agregacion,
+                                                       PSUinSample,   
+                                                   HouseholdsPerPSU,
+                                                   HouseholdsInSample,
+                                                   PersonsInSample,
+                              HouseholdsPerPSU_Adjusted,HouseholdsInSample_Adjusted,
+                              N, M, P, ajuste_perdida, cve, conf, LI, LS
+                            )
+```
+
+Guardamos los resultados
+
+```{r}
+setwd("../output/3.ArticulacionTamMuestraAjustado")
+writexl::write_xlsx(tabla_resultado_desoc, "tabla_resultado_desoc.xlsx")
+```
+
+Comprobación tamaños:
+
+```{r}
+tabla_resultado_desoc$PSUinSample[1]
+tabla_resultado_desoc$PSUinSample[2] + tabla_resultado_desoc$PSUinSample[3]
+
+tabla_resultado_desoc$PSUinSample[4] + 
+  tabla_resultado_desoc$PSUinSample[5] + tabla_resultado_desoc$PSUinSample[6] +
+  tabla_resultado_desoc$PSUinSample[7] + tabla_resultado_desoc$PSUinSample[8 ] + 
+  tabla_resultado_desoc$PSUinSample[9]
+
+
+```
+

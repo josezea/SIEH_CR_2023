@@ -1,0 +1,525 @@
+---
+title: "Rotación"
+author: "José Fernando Zea"
+date: "2023-07-03"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Que es A, B, C, D; E:
+A, B, C; D, E saltos sistemáticos no UPM virtuales.
+Protocolo.
+
+
+A primera vivienda, salta a 10 ese es la panel,
+B: 
+
+Cargamos los paquetes:
+
+```{r}
+# install_github("psirusteam/SamplingCoordination")
+library(samplesize4surveys)
+library(SamplingCoordination)
+library(dplyr)
+library(readxl)
+library(writexl)
+library(readxl)
+library(flextable)
+```
+
+Leemos el archivo de excel de los tamaños de muestra de desocupación, el cual es el tamaño de muestra trimestral:
+
+```{r}
+setwd("../output/3.ArticulacionTamMuestraAjustado")
+df_tam_desoc <- read_xlsx("tabla_resultado_desoc.xlsx")
+df_tam_desoc %>% flextable()
+```
+
+Leemos también el archivo de parámetros:
+
+```{r}
+setwd("../data/")
+df_parametros <- read_xlsx("ParametrosTablasMuestreo_Desempleo.xlsx")
+```
+
+# Procedimiento de rotación
+
+Durante el período intercensal se deberán realizar diferentes encuestas entre las que se destacan la Encuesta Nacional de Hogares y la Encuesta Continua de Empleo. Como se especificó anteriormente dos variables que son la tasa de desocupación y la proporción de hogares con pobreza extrema permitieron obtener un tamaño de muestra a nivel nacional, por zona y región de manera que se satisfaga los niveles de precisión para la tasa de desocupación (indicador trimestral) y la propoción de pobreza extrema (al acumular dos trimestres en el año). El INEC de Costa Rica estableció en conjunto con la CEPAL una estrategia de rotación de UPM durante el período intercensal con el esquema 5-0-0 trimestral. Este esquema repite la visita de una UPM durante 5 trimestres consecutivos (cada tres meses se realiza una visita por lo que el esquema 5-0-0 trimestral es equivalente al esquema 1-2-5 mensual). 
+
+Con este esquema se define realizar una encuesta en determinadas visitas, por ejemmplo la Encuesta Nacional de Hogares se realiza en la primera y en la quinta visita, otras encuestas más pequeñas pueden realizarse unicamente durante una visita y la Encuesta Continua de Empleo se lleva a cabo en las 5 visitas (cada tres meses) que le corresponda a un hogar.
+
+
+El proceso de rotación se llevará a cabo en dos etapas:
+
+- Asignar todas las UPM a los paneles
+- Seleccionar aleatoriamente las UPM en cada panel de manera que el tamaño de muestra acumulado trimestralmente sume el tamaño de muestra definido en cada estrato. Observemos que el número de paneles que se utiliza en cada trimestre son 15 paneles como se ilustra en la imagen a continuación:
+
+![](images/Paneles_imagen.png){width="654"}
+Lo anterior significa que la muestra trimestral se debe repartir en 15 paneles cada trimestre.
+Puede ocurrir que la cantidad de UPM's a seleccionar en cada uno de los 15 paneles sea mayor que la cantidad de UPMs que se asigna inicialmente en cada uno de los 156 paneles.
+En caso de que lo anterior no ocurra se deberán construir particiones virtuales de manera que el número de UPMs asignadas inicialmente en cada uno de los paneles sea mayor al número de UPMs que se deberán seleccionar en cada uno de los paneles en cada trimestre.
+
+
+Defiremos las rotaciones durante 12 años (2024-2035), generamos la rotación con el esquema trimestral 5-0-0:
+
+```{r}
+num_annos <- 12
+num_trimestres <- 4
+num_trimestres <- num_annos * num_trimestres # 13 años * 4 trimestres por año
+paneles <- cbind(Rotating_panels(5, 0, 0, num_trimestres), # Mes 1
+                 Rotating_panels(5, 0, 0, num_trimestres, value_initial =  "F"), # Mes 2
+                 Rotating_panels(5, 0, 0, num_trimestres, value_initial = "K")) # Mes 3
+paneles <- as.data.frame(paneles)
+
+row.names(paneles) <- paste0(rep(2024:(2024 + (num_annos-1)), each = 4), "-", 
+                                          rep(1:4, num_annos))
+
+colnames(paneles) <-  paste0(c(rep("Mes1", 5), rep("Mes2", 5), rep("Mes3", 5)), "-", 
+                             names(paneles))
+paneles %>% as.data.frame() 
+```
+
+Los paneles únicos que se usarán durante los 12 años (48 trimestres ) se presenta a continuación:
+
+```{r}
+paneles %>% as.matrix() %>% as.vector() %>% unique() %>% sort() %>% matrix(nrow = 12, byrow = T)
+```
+
+Durante los 12 años se considera un total de 156 paneles, cada una de las UPMS de cada región se asignará a cada uno de estos paneles.
+
+```{r}
+paneles %>% as.matrix() %>% as.vector() %>% unique() %>% length()
+```
+
+# Asignación de UPMS a los estratos
+
+Para asignar los tamaños de muestra utilizaremos la información de parámetros:
+
+```{r}
+flextable::flextable(df_parametros %>% select(Agregacion, N, M, r1, r2) %>% 
+                       cbind(df_tam_desoc %>% select(PSUinSample)))
+```
+
+## Región Central
+
+En la región central existe un total de 4.626 UPM con una población de 1.643.721 personas de los cuales aproxidamente la mitad corresponde a población económicamente activa (0,63 * 0,8 = 0,504). Por otro lado el tamaño de muestra de UPMS es 952 UPMs cada trimestre.
+
+Las 4.626 UPMs del estrato "Region - Central" serán asignadas a los 156 paneles:
+
+```{r}
+num_upms_central <- 5975
+tam_mue_central <- 952
+datos_region_central <- data.frame(estrato = rep("region_central", num_upms_central),
+                                   id_upm = 1:num_upms_central)
+resultado_central <- SamplingCoordination::Panel_sampling(DF = datos_region_central,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_central, #nrow(datos_region_central) 
+                                     PSU_stratum_sample_size = tam_mue_central) 
+```
+
+Las UPMs disponibles no son suficiente para asignar el tamaño de muestra intercensal:
+
+```{r}
+resultado_central$Panel_structure
+```
+
+El número de UPMs que se asignan en cada uno de los 156 paneles es de 39 o de 38 UPMs y se requieren para satisfacer el tamaño de muestra transversal un total de 63 o 64 UPMs a seleccionar en cada panel.
+
+```{r}
+resultado_central$Panel_structure_sample
+```
+
+Por lo tanto crearemos UPMS virtuales, se requiere dividir las UPMs en tres UPMS virtuales:
+
+```{r}
+datos_region_central <- data.frame(estrato = rep("region_central", num_upms_central*2),
+                                   id_upm = c(paste0(1:num_upms_central, "A"), 
+                                              paste0(1:num_upms_central, "B"))) %>% 
+                        arrange(id_upm)
+
+resultado_central <- SamplingCoordination::Panel_sampling(DF =  datos_region_central,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_central * 2, #nrow(datos_region_central) 
+                                     PSU_stratum_sample_size = tam_mue_central) 
+```
+
+Se construyen las UPMS con 76 u 77 UPMs virtuales para satisfacer el tamaño de muestra requerido en cada trimestre:
+```{r}
+resultado_central$Panel_structure
+```
+Se seleccionarán 63 o 64 UPMs dentro de cada panel para satisfacer los tamaños requeridos en cada trimestre:
+
+```{r}
+resultado_central$Panel_structure_sample
+```
+
+## Región Chorotega
+
+En la región Chorotega disponemos de 965 UPM con una población de 174.448 personasde los cuales aproxidamente cerca el 42,6% corresponde a población económicamente activa (0,56 * 0,76 = 0,426).
+Por otro lado el tamaño de muestra de UPMS que se requiere cada trimestre es de 460 UPMs.
+
+Las 965 UPMs del estrato "Region - Chorotega" serán asignadas a cada uno de los 156 paneles establecidos.
+
+```{r}
+num_upms_chorotega <- 965
+tam_mue_chorotega <- 460
+
+datos_region_chorotega <- data.frame(estrato = rep("region_chorotega", num_upms_chorotega),
+                                   id_upm = 1:num_upms_chorotega)
+resultado_chorotega <- SamplingCoordination::Panel_sampling(DF = datos_region_chorotega,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_chorotega, #nrow(datos_region_central) 
+                                     PSU_stratum_sample_size = tam_mue_chorotega) 
+```
+
+Las UPMs disponibles no serían suficiente para asignar el tamaño de muestra intercensal:
+
+```{r}
+resultado_chorotega$Panel_structure
+```
+
+Cada uno de los 156 paneles requerirán un total de 31 o 30 paneles:
+
+```{r}
+resultado_chorotega$Panel_structure_sample
+```
+
+Crearemos UPMS virtuales, se requerirá dividir en cinco UPMS virtuales:
+
+```{r}
+datos_region_chorotega <- data.frame(estrato = rep("region_chorotega", num_upms_chorotega * 5),
+                                   id_upm = c(paste0(1:num_upms_chorotega, "A"), 
+                                              paste0(1:num_upms_chorotega, "B"),
+                                              paste0(1:num_upms_chorotega, "C"),
+                                              paste0(1:num_upms_chorotega, "D"),
+                                              paste0(1:num_upms_chorotega, "E")
+                                              )) %>% 
+                        arrange(id_upm)
+
+resultado_chorotega <- SamplingCoordination::Panel_sampling(DF = datos_region_chorotega,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_chorotega * 5, #nrow(datos_region_central) 
+                                     PSU_stratum_sample_size = tam_mue_chorotega) 
+```
+
+Obtenemos un total de 30 o 31 UPMs en cada panel:
+
+```{r}
+resultado_chorotega$Panel_structure
+```
+
+Se deberán seleccionar 30 o 31 UPMs en cada panel para satisfacer el tamaño de 460 UPM seleccionados en esta región:
+
+```{r}
+resultado_chorotega$Panel_structure_sample
+
+```
+
+Con la división en 5 UPMs logramos el objetivo.
+
+
+## Región Pacífica Central
+
+En la región Pacífica Central disponemos de 725 UPM con una población de 139,180 personasde los cuales aproxidamente cerca el 44,46% corresponde a población económicamente activa (0,57 * 0,78 = 0,4446).
+Por otro lado el tamaño de muestra de UPMS es 536 UPMs cada trimestre.
+
+Las 725 UPMs del estrato "Region - Pacífica Central" serán asignadas a los 156 paneles.
+
+
+```{r}
+num_upms_pacificaCentral <- 725
+tam_mue_pacificaCentral <- 536
+
+datos_region_pacificaCentral <- data.frame(estrato = rep("region_pacifica_central", num_upms_pacificaCentral),
+                                   id_upm = 1:num_upms_pacificaCentral)
+resultado_pacificaCentral <- SamplingCoordination::Panel_sampling(DF = datos_region_pacificaCentral,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_pacificaCentral, #nrow(datos_region_central) 
+                                     PSU_stratum_sample_size = 536) 
+
+```
+
+Las UPMs disponibles no serían suficiente para asignar el tamaño de muestra intercensal:
+
+```{r}
+resultado_pacificaCentral$Panel_structure
+```
+
+A cada una de los 156 paneles  se les asigna 4 o 5 UPMs, sin embargo se requiere seleccionar 35 o 36 UPMs cada trimestre para satisfacer el tamaño de muestra:
+
+```{r}
+resultado_pacificaCentral$Panel_structure_sample
+```
+
+Por lo tanto crearemos UPMS virtuales, se requerirá dividir en 8 las UPMS virtuales:
+
+```{r}
+datos_region_pacificaCentral <- data.frame(estrato = rep("region_pacifica_central", 
+                                                         num_upms_pacificaCentral * 8),
+                                   id_upm = c(paste0(1:num_upms_pacificaCentral, "A"), 
+                                              paste0(1:num_upms_pacificaCentral, "B"),
+                                              paste0(1:num_upms_pacificaCentral, "C"),
+                                              paste0(1:num_upms_pacificaCentral, "D"),
+                                              paste0(1:num_upms_pacificaCentral, "E"),
+                                              paste0(1:num_upms_pacificaCentral, "F"),
+                                              paste0(1:num_upms_pacificaCentral, "G"),
+                                              paste0(1:num_upms_pacificaCentral, "H")
+                                              )) %>% 
+                                  arrange(id_upm)
+
+resultado_region_pacificaCentral <- SamplingCoordination::Panel_sampling(DF = datos_region_pacificaCentral,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_pacificaCentral * 8, #nrow(datos_region_pacificaCentral) 
+                                     PSU_stratum_sample_size = tam_mue_pacificaCentral) 
+
+```
+
+Al crear las UPMs virtuales observamos que se requieren asignar a cada uno de los paneles 37 o 38 de ellas:
+
+```{r}
+resultado_region_pacificaCentral$Panel_structure
+```
+
+Se seleccionarán en cada período transversar un total de 35 o 36 UPMS:
+
+```{r}
+resultado_region_pacificaCentral$Panel_structure_sample
+```
+
+En la región pacífica central se requiere hacer una selección de casi todas las UPMs en cada uno de los paneles para satisfacer los requerimientos de tamaño de muestra trimestral.
+
+
+## Región Region_Brunca
+En la región Brunca disponemos de 938 UPM con una población de 148,152 personasde los cuales aproxidamente cerca el 40% corresponde a población económicamente activa (0,52 * 0,77 = 0,4004). Por otro lado el tamaño de muestra de UPMS es 488 UPMs cada trimestre.
+
+Las 3.971 UPMs del estrato "Region - Chorotega" serán asignadas a los paneles establecidos.
+
+```{r}
+num_upms_brunca <- 938
+tam_mue_brunca <- 488
+
+datos_region_brunca <- data.frame(estrato = rep("region_brunca", num_upms_brunca),
+                                   id_upm = 1:num_upms_brunca)
+resultado_brunca <- SamplingCoordination::Panel_sampling(DF = datos_region_brunca,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_brunca, #nrow(datos_region_central) 
+                                     PSU_stratum_sample_size = tam_mue_brunca) 
+
+```
+
+Las UPMs disponibles no serían suficiente para asignar el tamaño de muestra intercensal:
+
+```{r}
+resultado_brunca$Panel_structure
+```
+En cada uno de los 156 paneles se asignaría 5 o 6 paneles, pero la muestra de UPMs que se debe seleccionar en cada uno de las UPMs son 32 o 33 UPMs para satisfacer los tamaños de muestra transversales: 
+
+```{r}
+resultado_brunca$Panel_structure_sample
+```
+
+Por lo tanto crearemos UPMS virtuales, se requerirá dividir en seis las UPMS virtuales:
+
+```{r}
+datos_region_brunca <- data.frame(estrato = rep("region_brunca", num_upms_brunca * 6),
+                                   id_upm = c(paste0(1:num_upms_brunca, "A"), 
+                                              paste0(1:num_upms_brunca, "B"),
+                                              paste0(1:num_upms_brunca, "C"),
+                                              paste0(1:num_upms_brunca, "D"),
+                                              paste0(1:num_upms_brunca, "E"),
+                                              paste0(1:num_upms_brunca, "F")
+                                              )) %>% 
+                        arrange(id_upm)
+
+resultado_brunca <- SamplingCoordination::Panel_sampling(DF = datos_region_brunca,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_brunca * 6, #nrow(datos_region_pacificaCentral) 
+                                     PSU_stratum_sample_size = tam_mue_brunca) 
+
+```
+
+Al particionar las UPMS virtuales el número de UPMs que se asignará en cada una de las UPMs es de 36 ó 37 UPMS:
+
+```{r}
+resultado_brunca$Panel_structure
+```
+Se seleccionarán en cada período transversar un total de 32 o 33 UPMS:
+
+```{r}
+resultado_brunca$Panel_structure_sample
+```
+
+
+# Región Huetar Atlántico
+En la región Brunca disponemos de 4,297 UPM con una población de 193,901 personasde los cuales aproxidamente cerca el 41% corresponde a población económicamente activa (0,55 * 0,75 = 0,4125). Por otro lado el tamaño de muestra de UPMS es 535 UPMs cada trimestre.
+
+Las 4.297 UPMs del estrato "Region - Chorotega" serán asignadas a los paneles establecidos.
+
+```{r}
+num_upms_huetarAtlantico <- 994
+tam_mue_huetarAtlantico <- 535
+
+datos_region_huetarAtlantico <- data.frame(estrato = rep("region_huetar_atlantico", num_upms_huetarAtlantico),
+                                   id_upm = 1:num_upms_huetarAtlantico)
+resultado_huetarAtlantico <- SamplingCoordination::Panel_sampling(DF = datos_region_huetarAtlantico,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_huetarAtlantico, #nrow(datos_region_central) 
+                                     PSU_stratum_sample_size = tam_mue_huetarAtlantico) 
+
+```
+
+Las UPMs disponibles no serían suficiente para asignar el tamaño de muestra intercensal:
+
+```{r}
+resultado_huetarAtlantico$Panel_structure
+```
+
+Se asignarán 6 o 7 UPMs en cada uno de los 156 paneles y se requieren seleccionar 35 o 36 UPMs en cada panel para satisfacer los requerimientos de tamaño de muestra trimestral:
+
+```{r}
+resultado_huetarAtlantico$Panel_structure_sample
+```
+
+Por lo tanto crearemos UPMS virtuales, se requerirá dividir en seis las UPMS virtuales:
+
+```{r}
+datos_region_huetarAtlantico <- data.frame(estrato = rep("region_huetar_atlantico", num_upms_huetarAtlantico * 6),
+                                   id_upm = c(paste0(1:num_upms_huetarAtlantico, "A"), 
+                                              paste0(1:num_upms_huetarAtlantico, "B"),
+                                              paste0(1:num_upms_huetarAtlantico, "C"),
+                                              paste0(1:num_upms_huetarAtlantico, "D"),
+                                              paste0(1:num_upms_huetarAtlantico, "E"),
+                                              paste0(1:num_upms_huetarAtlantico, "F")
+                                              
+                                                                            )) %>% 
+                        arrange(id_upm)
+
+datos_region_huetarAtlantico$id_upm <- as.character(datos_region_huetarAtlantico)
+resultado_huetarAtlantico <- SamplingCoordination::Panel_sampling(DF = datos_region_huetarAtlantico,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_huetarAtlantico * 6, #nrow(datos_region_pacificaCentral) 
+                                     PSU_stratum_sample_size = tam_mue_huetarAtlantico) 
+```
+
+
+El total de UPMs a asignar en cada uno de los 156 paneles es de 38 ó 39 UPMs:
+
+```{r}
+resultado_huetarAtlantico$Panel_structure
+```
+
+El tamaño de muestra requerido es de 35 o 36 UPMs por panel:
+
+```{r}
+resultado_huetarAtlantico$Panel_structure_sample
+```
+
+# Region_Huetar_Norte
+En la región Huetar Norte disponemos de 864 UPM con una población de 185,453 personasde los cuales aproxidamente cerca el 42% corresponde a población económicamente activa (0,57 * 0,75 = 0,4275).
+Por otro lado el tamaño de muestra de UPMS es de 385 UPMs cada trimestre.
+
+Las 3,962 UPMs del estrato "Region - Huetar Norte" serán asignadas a los 156 paneles establecidos para los 12 años:
+
+```{r}
+num_upms_huetarNorte <- 864
+tam_mue_huetarNorte <- 385
+
+datos_region_huetarNorte <- data.frame(estrato = rep("region_huetar_norte", num_upms_huetarNorte),
+                                   id_upm = 1:num_upms_huetarNorte)
+datos_region_huetarNorte$id_upm <- as.character(datos_region_huetarNorte$id_upm)
+resultado_huetarNorte <- SamplingCoordination::Panel_sampling(DF = datos_region_huetarNorte,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_huetarNorte, #nrow(datos_region_central) 
+                                     PSU_stratum_sample_size = tam_mue_huetarNorte) 
+```
+
+Las UPMs disponibles no serían suficiente para asignar el tamaño de muestra intercensal:
+
+```{r}
+resultado_huetarNorte$Panel_structure
+```
+Se requiere seleccionar 25 o 26 UPMs en los 156 paneles, por otro lado se requiere la misma cantidad para satisfacer el tamaño de muestra trimestral:
+
+```{r}
+resultado_huetarNorte$Panel_structure_sample
+```
+
+
+Por lo tanto crearemos UPMS virtuales, se requerirá dividir en cinco las UPMS virtuales:
+
+```{r}
+datos_region_huetarNorte <- data.frame(estrato = rep("region_huetar_norte", num_upms_huetarNorte * 5),
+                                   id_upm = c(paste0(1:num_upms_huetarNorte, "A"), 
+                                              paste0(1:num_upms_huetarNorte, "B"),
+                                              paste0(1:num_upms_huetarNorte, "C"),
+                                              paste0(1:num_upms_huetarNorte, "D"),
+                                              paste0(1:num_upms_huetarNorte, "E")
+                                                                            )) %>% 
+                        arrange(id_upm)
+
+datos_region_huetarNorte$id_upm <- as.character(datos_region_huetarNorte)
+datos_region_huetarNorte <- SamplingCoordination::Panel_sampling(DF = datos_region_huetarNorte,
+                                                  stratum_column = "estrato",
+                                     PSU_column = "id_upm", panels = paneles,
+                                     PSU_stratum_size = num_upms_huetarNorte * 5, #nrow(datos_region_pacificaCentral) 
+                                     PSU_stratum_sample_size = tam_mue_huetarNorte) 
+
+```
+
+
+El total de UPMs a asignar en cada uno de los 156 paneles es de 27 ó 28 paneles:
+
+```{r}
+datos_region_huetarNorte$Panel_structure
+```
+
+El tamaño de muestra requerido es de 25 o 26 UPMs por panel:
+
+```{r}
+datos_region_huetarNorte$Panel_structure_sample
+```
+
+
+Obtenemos un archivo para la selección de la muestra:
+
+
+```{r}
+resultados_muestra_paneles <- bind_rows(
+resultado_central$DF_Strata_Panels,
+resultado_chorotega$DF_Strata_Panels,
+resultado_region_pacificaCentral$DF_Strata_Panels,
+resultado_brunca$DF_Strata_Panels,
+resultado_huetarAtlantico$DF_Strata_Panels,
+resultado_huetarNorte$DF_Strata_Panels)
+```
+
+Algunas comprobaciones
+
+```{r}
+resultado_central$DF_Strata_Panels %>% filter(Panels %in% 
+ paneles[1,] %>% as.matrix() %>% as.vector()) %>% pull(Sel_PSU) %>% sum()
+```
+
+```{r}
+setwd("../output/4.Paneles")
+saveRDS(resultados_muestra_paneles, "resultados_muestra_paneles.Rds")
+```
+
