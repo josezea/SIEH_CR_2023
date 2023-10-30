@@ -1,0 +1,31 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: "2023-10-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(remotes)
+```
+
+
+Se debe instalar R tools y seguir las instrucciones para referenciar Rtools especificadas acá: https://cran.r-project.org/bin/windows/Rtools/rtools40.html
+
+```{r}
+#remotes::install_github("JanMarvin/readspss")
+
+library(readspss)
+df <- read.sav("GPES-ELAB-GEBD-ENAHO-2022_BdBaseBajoLicenciaParaSIEH.sav", pass = "E2022us#")
+```
+
+Se exporta el archivo a R:
+
+```{r}
+saveRDS(df, "df_enaho2022.Rds")
+```
+

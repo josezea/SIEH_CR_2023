@@ -1,0 +1,146 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: "2023-10-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Calculo de indicadores a nivel catonal
+
+
+```{r}
+library(dplyr)
+library(srvyr)
+library(samplesize4surveys)
+```
+
+
+```{r}
+df_enaho2022 <- readRDS("df_enaho2022.Rds")
+```
+
+```{r}
+table(df_enaho2022$ZONA)
+```
+
+```{r}
+table(df_enaho2022$REGION)
+
+```
+
+Concatemanos la región y la zona para definir el estrato de las UPMS:
+
+```{r}
+df_enaho2022$REGIONZONA <- paste0(df_enaho2022$REGION, "_", df_enaho2022$ZONA)
+```
+
+
+# Diseño muestral para desocupación
+
+Calculamos las indicadores para desocupación
+
+```{r}
+df_enaho2022 %<>% mutate(ocupados = ifelse(CondAct == "Ocupado", 1, 
+                                           ifelse(CondAct == "Fuera de la fuerza de trabajo" |
+                                                    is.na(CondAct), NA, 0)),
+      desocupados = ifelse(CondAct == "Desempleado abierto", 1, 
+                           ifelse(CondAct == "Fuera de la fuerza de trabajo" | is.na(CondAct), NA, 0)),
+                        inactivos = ifelse(CondAct == "Fuera de la fuerza de trabajo" | is.na(CondAct),
+                                           1, 0),
+                        activos = ocupados + desocupados)
+```
+
+```{r}
+df_enaho2022 %<>% mutate(indica_pobrezaLP = 
+ifelse(POBRE_LP == "Hogar Pobre LP" & !is.na(POBRE_LP), 1, 0),
+indica_pobrezaExtrema =  ifelse(POBRE_EXTREMO == "Hogar Pobre Extremo" &
+                                              !is.na(POBRE_EXTREMO), 1, 0),
+unos = 1)   
+```
+
+
+
+Comprobación rapida: 
+
+```{r}
+sum(df_enaho2022$desocupados, na.rm = T) / (sum(df_enaho2022$ocupados, na.rm = T) + sum(df_enaho2022$desocupados, na.rm = T))
+```
+
+
+
+
+Definimos el diseño muestral
+
+```{r}
+diseno_muestral <- df_enaho2022 %>% as_survey_design(ids = UPM,
+                                        strata = DISENO_MUESTRA,  
+                                        weights = FACTOR, nest = T)
+```
+
+
+ %>% group_by(!!sym(str_dominio))
+ 
+```{r}
+# df_estima_indicadores
+estimaciones_nacionales <- diseno_muestral %>%
+    summarise(pobreza = survey_mean(indica_pobrezaLP, na.rm = T, deff = T),
+              pobrezaExtr = survey_mean(indica_pobrezaExtrema, na.rm = T, deff = T),
+              tasa_desocupacion  = survey_ratio(desocupados, activos, na.rm = T,
+                                                deff = T),
+              N = survey_total(unos),
+              ) 
+```
+
+
+
+Analizamos cuantos cantones:
+
+```{r}
+consulta_canton <- df_enaho2022$CANTON %>% table() %>% as.data.frame()
+consulta_canton <- consulta_canton %>% filter(Freq > 0)
+names(consulta_canton)[1] <- "CANTON"
+```
+
+
+
+Calculamos por dominio:
+
+
+```{r}
+estimaciones_dominios <- diseno_muestral %>% group_by(CANTON) %>%
+    summarise(pobreza = survey_mean(indica_pobrezaLP, na.rm = T, deff = T),
+              pobrezaExtr = survey_mean(indica_pobrezaExtrema, na.rm = T, deff = T),
+              tasa_desocupacion  = survey_ratio(desocupados, activos, na.rm = T,
+                                                deff = T),
+              N = survey_total(unos),
+              )
+
+estimaciones_dominios <- estimaciones_dominios %>% left_join(consulta_canton, by = "CANTON")
+estimaciones_dominios <- estimaciones_dominios %>% arrange(desc(Freq))
+```
+
+
+Filtramos los registros que tengan más de 200 encuestas que son los brindan estimaciones precisas:
+```{r}
+#estimaciones_dominios2 <- estimaciones_dominios %>% filter(Freq >= 200)
+#estimaciones_dominios2 <- estimaciones_dominios2 %>% select(CANTON, pobreza, pobreza_deff,
+#                    pobrezaExtr, pobrezaExtr_deff, tasa_desocupacion, tasa_desocupacion_deff,                  #                      Freq)
+```
+
+
+Guardar esta tabla:
+
+```{r}
+setwd("output")
+saveRDS(estimaciones_dominios, "estimaciones_dominios_encuesta.Rds")
+```
+
+
+```{r}
+
+```
+

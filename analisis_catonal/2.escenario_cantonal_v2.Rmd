@@ -1,0 +1,398 @@
+---
+title: "Escenarios por Cantón"
+author: "José Fernando Zea"
+date: "2023-10-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Cargamos los paquetes necesarios para los análisis: 
+
+```{r, warning=FALSE, message=FALSE}
+library(haven)
+library(dplyr)
+library(samplesize4surveys)
+library(srvyr)
+library(labelled)
+library(readxl)
+```
+
+Leemos el marco poblacional:
+
+```{r}
+df_marcoCepal <- read_spss("MMV_2011 usuarios_Cepal.sav") 
+```
+
+Arvhivo de homologación de archivos:
+
+```{r}
+homologacion_nombres <- read_xlsx("homologacion_nombres.xlsx")
+```
+
+El número de cantones del marco es:
+
+```{r}
+df_marcoCepal$Canton %>% unique() %>% length()
+```
+
+Cuantifiquemos el número de viviendas y de UPMS en cada uno de los cantones:
+
+```{r}
+df_vivUPMXCanton <- df_marcoCepal %>% group_by(Canton) %>% 
+  summarise(tot_hogares = sum(Total_Hogares, na.rm = TRUE), tot_viv = sum(Viv_ocupadas), tot_upm = n())
+```
+
+
+# Parámetros de fuente externa
+
+Traemos los parametros de proporción de desocupación pobreza y pobreza extrema de fuente censal
+
+```{r, warning=FALSE}
+df_pobreza <- read_excel("INEC Muestra cantonal.xlsx", sheet = "Incidencia pobreza", range = "B8:F89")
+df_pobreza <- as.data.frame(df_pobreza)
+names(df_pobreza) <- c("Canton", "nombre_canton", "pobreza", "pobreza_extrema", "gini")
+df_pobreza <- as_tibble(df_pobreza)
+```
+
+Leemos la estimación de desocupación:
+
+```{r}
+df_desocupacion <- read_excel("INEC Muestra cantonal.xlsx", 
+                              sheet = "Mercado laboral", range = "B8:L105")
+
+df_desocupacion <- df_desocupacion %>% filter(!is.na(`Tasa de desempleo abierto`))
+df_desocupacion <- df_desocupacion[,c(1, 11)]
+names(df_desocupacion) <- c("nombre_canton", "tasa_desempleo")
+df_desocupacion <- df_desocupacion %>% filter(nombre_canton != "Costa Rica")
+```
+
+Areglamos los nombres de los cantones:
+
+```{r}
+df_canton_nombreCanton <- df_marcoCepal %>% 
+  select(Canton,  Provincia) %>% unique()
+df_canton_nombreCanton <- df_canton_nombreCanton$Canton %>% labelled::val_labels() %>% as.data.frame() %>% tibble::rownames_to_column()
+names(df_canton_nombreCanton) <- c("nombre_canton", "Canton")
+df_canton_nombreCanton$Canton <- as.character(df_canton_nombreCanton$Canton)
+```
+
+
+```{r}
+df_desocupacion <- df_desocupacion %>% left_join(df_canton_nombreCanton, by = "nombre_canton")
+```
+
+
+
+Integramos los parámetros de las tablas de muestreo provenientes del marco y de la estimación inicial de parámetros de pobreza y desocupación:
+
+```{r}
+df_vivUPMXCanton$Canton <- as.character(df_vivUPMXCanton$Canton)
+df_pobreza$Canton <- as.character(df_pobreza$Canton)
+
+df_parametros <- left_join(df_vivUPMXCanton, df_pobreza, by = "Canton")
+df_parametros <- left_join(df_parametros, df_desocupacion %>%
+                             select(-nombre_canton ), by = "Canton")
+df_parametros <- df_parametros %>% 
+  select(c("Canton", "nombre_canton", "tot_viv", "tot_hogares", "tot_upm", "pobreza", 
+"pobreza_extrema", "tasa_desempleo"))
+```
+
+
+
+# Integración de la encuesta:
+
+Leemos las estimaciones de las encuestas, para aquellos cantones con más de 200 encuestas puesto que en los cantones con menor número de encuestas se presentan faltantes en las estimaciones
+
+```{r}
+setwd("output")
+estimaciones_dominios_encuesta <- readRDS("estimaciones_dominios_encuesta.Rds")
+
+estimaciones_dominios_encuesta$CANTON <- as.character(estimaciones_dominios_encuesta$CANTON)
+
+nombre_canton <- strsplit(estimaciones_dominios_encuesta$CANTON, split = ", ") 
+nombre_canton <- sapply(nombre_canton, function(x) x[2]) %>% toupper()
+estimaciones_dominios_encuesta$nombre_canton_encuesta <- nombre_canton
+
+```
+
+12 cantones tienen estimaciones nulas de pobreza extrema y una de desocupación, varios de ellos por tamaños de muestra pqueños (esto se manifiesta en cantones en donde se realizaron menos de 200 encuestas), para estos cantones se imputará la desoucpación a partir de las fuentes iniciales de estimaciones cantonales del censo 2011:
+
+
+```{r}
+estimaciones_dominios2 <- estimaciones_dominios_encuesta %>% filter(Freq >= 200)
+estimaciones_dominios2 <- estimaciones_dominios2 %>% 
+  select(nombre_canton_encuesta, pobreza, pobreza_deff,
+                    pobrezaExtr, pobrezaExtr_deff, tasa_desocupacion, tasa_desocupacion_deff,                                        Freq)
+
+```
+
+Se realiza un proceso de homologación de nombres para poder integrarlo a la información de parámetros:
+
+
+```{r}
+estimaciones_dominios2 <- estimaciones_dominios2 %>%
+                          left_join(homologacion_nombres, 
+                                    by = "nombre_canton_encuesta")
+```
+
+```{r}
+names(estimaciones_dominios2)[2:8] <- paste0(names(estimaciones_dominios2)[2:8],"_",
+                                             "encuesta")
+```
+
+Esta tabla tiene las estimaciones de la ENAHO para 69 cantones y para 12 cantones de la información censal del 2011. Se resulta teniendo estimaciones para solamente 57 cantones:
+
+
+Revisamos la estimación de parámetros:
+
+```{r}
+df_parametros <- left_join(df_parametros, estimaciones_dominios2, by = "nombre_canton")
+```
+
+Multiplicamos las estimaciones por 100 para visualizar mejor las estimaciones de la encuesta:
+
+```{r}
+df_parametros$pobrezaExtr_encuesta <- df_parametros$pobrezaExtr_encuesta * 100
+df_parametros$tasa_desocupacion_encuesta <- df_parametros$tasa_desocupacion_encuesta * 100
+```
+
+Esta tabla tiene las estimaciones de desempleo, pobreza, 
+
+
+# Combinación de parámetros de pobreza extrema:
+
+
+Calculamos la estimación de pobreza extrema, y la tasa de desempleo:
+
+```{r}
+df_parametros$POBREZA_EXTREMA <- ifelse(is.na(df_parametros$pobrezaExtr_encuesta) |
+                                          df_parametros$pobrezaExtr_encuesta == 0,
+                                 df_parametros$pobreza_extrema,
+                                 df_parametros$pobrezaExtr_encuesta)
+df_parametros$TASA_DESOCUP <- ifelse(is.na(df_parametros$tasa_desocupacion_encuesta) | 
+                                       df_parametros$tasa_desocupacion_encuesta == 0,
+                                 df_parametros$tasa_desempleo,
+                                 df_parametros$tasa_desocupacion_encuesta)
+
+df_parametros$DEFF_PE <- ifelse(is.na(df_parametros$pobrezaExtr_deff_encuesta),
+                                 mean(df_parametros$pobrezaExtr_deff_encuesta, na.rm = T),
+                                 df_parametros$pobrezaExtr_deff_encuesta)
+
+df_parametros$DEFF_DESOC <- ifelse(is.na(df_parametros$tasa_desocupacion_deff_encuesta),
+                                 mean(df_parametros$tasa_desocupacion_deff_encuesta,
+                                      na.rm = T),
+                                 df_parametros$tasa_desocupacion_deff_encuesta)
+
+```
+
+
+Los efectos diseños son moderados:
+
+```{r}
+summary(df_parametros$DEFF_DESOC)
+```
+
+
+# Tablas de muestre para desocupación
+
+
+Se definen los parámetros para desocupación:
+
+```{r}
+df_parametros_desoc <- df_parametros
+df_parametros_desoc$deff <- df_parametros_desoc$DEFF_DESOC  
+df_parametros_desoc$conf <- 0.95 
+
+# SUpuestos 
+df_parametros_desoc$r <- 0.5 # Personas economicamente activas  Nuevo censo
+df_parametros_desoc$b <- 3 # Número de personas por hogar
+df_parametros_desoc$vivXUPM <- 10 # Número de viviendas por UPM
+
+# Calculos de parámetros
+df_parametros_desoc$N <- df_parametros_desoc$tot_hogares * df_parametros_desoc$b 
+
+df_parametros_desoc$nbarra_encuesta <- df_parametros_desoc$vivXUPM  * df_parametros_desoc$b * df_parametros_desoc$r # Personas
+df_parametros_desoc$rho <- (df_parametros_desoc$deff - 1) / (df_parametros_desoc$nbarra_encuesta - 1) 
+```
+
+Calculamos las tablas de muestreo para los diferentes dominios:
+
+```{r}
+lista_tablaMuestra_desoc <- vector(mode = "list", length = 81)
+for(i in 1:nrow(df_parametros_desoc)){
+temp_desoc <- ss4HHSp(N = df_parametros_desoc$N[i],
+                       M = df_parametros_desoc$tot_upm[i], # Recuendo no poderado
+                       r = df_parametros_desoc$r[i],  # tasa que afecta
+                       b = df_parametros_desoc$b[i], 
+                       rho = df_parametros_desoc$rho[i],
+                       P =   df_parametros_desoc$TASA_DESOCUP[i] / 100, 
+                       delta =  0.2, #  Error estándar relativo,
+                       conf = 0.95, m = 5:15)
+temp_desoc$M_UPM <- df_parametros_desoc$tot_upm[i]
+temp_desoc$Canton <- df_parametros_desoc$Canton[i]
+temp_desoc$nombre_canton <- df_parametros_desoc$nombre_canton[i]
+#  which(df_parametros$Canton == 120 )  
+
+lista_tablaMuestra_desoc[[i]] <- temp_desoc
+}
+names(lista_tablaMuestra_desoc) <- df_parametros_desoc$Canton
+```
+
+
+Si el tamaño de muestra es mayor realizar un Muestre aleatorio simple de hogares:
+
+```{r}
+filtered_df_list_desoc <- lapply(lista_tablaMuestra_desoc, function(df) {
+  df %>% filter(HouseholdsPerPSU == 6)
+})
+# Combinamos todo en un dataframe:
+df_escenarios_desoc <- bind_rows(filtered_df_list_desoc)
+```
+
+
+Tenemos en cuenta los cantones de muy poca población
+
+```{r}
+df_escenarios_desoc2 <- df_escenarios_desoc
+
+df_escenarios_desoc2$indica_MAS <- ifelse(df_escenarios_desoc2$PSUinSample >= df_escenarios_desoc2$M_UPM, 
+                                          "MAS", "2 etapas")
+
+df_escenarios_desoc2$PSUinSample2 <- ifelse(df_escenarios_desoc2$PSUinSample >= df_escenarios_desoc2$M_UPM, df_escenarios_desoc2$M_UPM, 
+df_escenarios_desoc2$PSUinSample)
+
+df_escenarios_desoc2$DEFF2  <- ifelse(df_escenarios_desoc2$PSUinSample >= df_escenarios_desoc2$M_UPM, 1, 
+df_escenarios_desoc2$DEFF)
+
+
+df_escenarios_desoc2$PersonsInSample2   <- ifelse(df_escenarios_desoc2$PSUinSample >= df_escenarios_desoc2$M_UPM, 
+ss4p(df_parametros_desoc$N, P = df_parametros_desoc$TASA_DESOCUP[i] / 100, 
+     DEFF = 1, conf = 0.95, error = "rme", 
+     delta = 0.12), df_escenarios_desoc2$PersonsInSample)
+
+# Dividir por 1.5 (numero de personas econoicamente activa por hgoar)
+df_escenarios_desoc2$HouseholdsInSample2 <- ifelse(df_escenarios_desoc2$PSUinSample >= df_escenarios_desoc2$M_UPM, 
+df_escenarios_desoc2$PersonsInSample2 / 1.5,
+df_escenarios_desoc2$HouseholdsInSample)
+  
+ 
+```
+
+Fracciónd e UPMS
+```{r}
+df_escenarios_desoc2$PSUinSample2 / df_escenarios_desoc2$M_UPM*100
+```
+
+```{r}
+sum(df_escenarios_desoc2$HouseholdsInSample2)
+```
+
+
+
+
+# Tablas de muestre para pobreza extrema
+
+
+Para pobreza extrema los efectos diseños generados en la encuesta son muy grandes:
+
+```{r}
+summary(df_parametros_PE$deff)
+```
+
+
+Definición de algunos parámetros para pobreza extrema
+
+
+
+```{r}
+df_parametros_PE <- df_parametros
+df_parametros_PE$deff <- df_parametros_PE$DEFF_PE # Revisarlo
+df_parametros_PE$conf <- 0.95 
+
+# SUpuestos 
+df_parametros_PE$r <- 1 # Todos hogares expuestos
+df_parametros_PE$b <- 1 
+df_parametros_PE$vivXUPM <- 10 # Número de viviendas por UPM
+
+# Calculos de parámetros
+df_parametros_PE$N <- df_parametros_PE$tot_hogares * df_parametros_PE$b 
+
+df_parametros_PE$nbarra_encuesta <- df_parametros_PE$vivXUPM  * df_parametros_PE$b * df_parametros_PE$r # Personas
+df_parametros_PE$rho <- (df_parametros_PE$deff - 1) / (df_parametros_PE$nbarra_encuesta - 1) 
+```
+
+
+
+```{r}
+lista_tablaMuestra_PE <- vector(mode = "list", length = 81)
+for(i in 1:nrow(df_parametros_PE)){
+temp_PE <- ss4HHSp(N = df_parametros_PE$N[i],
+                       M = df_parametros_PE$tot_upm[i], # Recuendo no poderado
+                       r = df_parametros_PE$r[i],  # tasa que afecta
+                       b = df_parametros_PE$b[i], 
+                       rho = df_parametros_PE$rho[i],
+                       P =   df_parametros_PE$POBREZA_EXTREMA[i] / 100, 
+                       delta =  0.12, #  Error estándar relativo,
+                       conf = 0.95, m = 5:15)
+temp_PE$M_UPM <- df_parametros_PE$tot_upm[i]
+temp_PE$Canton <- df_parametros_PE$Canton[i]
+temp_PE$nombre_canton <- df_parametros_PE$nombre_canton[i]
+#  which(df_parametros$Canton == 120 )  
+
+lista_tablaMuestra_PE[[i]] <- temp_PE
+}
+names(lista_tablaMuestra_PE) <- df_parametros_PE$Canton
+```
+
+
+Si el tamaño de muestra es mayor realizar un Muestre aleatorio simple de hogares:
+
+```{r}
+filtered_df_list_PE <- lapply(lista_tablaMuestra_PE, function(df) {
+  df %>% filter(HouseholdsPerPSU == 6)
+})
+# Combinamos todo en un dataframe:
+df_escenarios_PE <- bind_rows(filtered_df_list_PE)
+df_escenarios_PE$PersonsPerPSU <- NULL
+```
+
+
+Para pobreza extrema no es viable con 6 encuestas realizar un Muestreo en dos etapas por el número tan alto de UPMS que se requerirían (practicamente hacer un censo de UPMS):
+
+```{r}
+table(df_escenarios_PE$PSUinSample >= df_escenarios_PE$M_UPM)
+```
+
+Observemos el número de encuestas requerido si se hiciera un MAS:
+
+```{r}
+df_escenarios_PE2 <- df_escenarios_PE
+
+df_escenarios_PE2$indica_MAS <- ifelse(df_escenarios_PE2$PSUinSample >= df_escenarios_PE2$M_UPM, 
+                                             "MAS", "2 etapas")
+
+df_escenarios_PE2$PSUinSample2 <- ifelse(df_escenarios_PE2$PSUinSample >= df_escenarios_PE2$M_UPM, df_escenarios_PE2$M_UPM, 
+df_escenarios_PE2$PSUinSample)
+
+df_escenarios_PE2$DEFF2  <- ifelse(df_escenarios_PE2$PSUinSample >= df_escenarios_PE2$M_UPM, 1, 
+df_escenarios_PE2$DEFF)
+
+
+df_escenarios_PE2$HouseholdsInSample2   <- ifelse(df_escenarios_PE2$PSUinSample >= df_escenarios_PE2$M_UPM, 
+ss4p(df_parametros_PE$N, P = df_parametros_PE$pobreza_extrema / 100, DEFF = 1, conf = 0.95, error = "rme", 
+            delta = 0.2),  df_escenarios_PE2$HouseholdsInSample)
+
+```
+
+```{r}
+df_escenarios_PE2$PSUinSample2 / df_escenarios_PE2$M_UPM*100
+```
+
+
+```{r}
+sum(df_escenarios_PE2$HouseholdsInSample2, na.rm = T)
+```
+
