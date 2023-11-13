@@ -1,0 +1,195 @@
+---
+title: "Análisis agregaciones"
+author: "José Fernando Zea"
+date: "2023-09-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Algumos preliminares
+
+
+
+# Lectura de tamaños de muestra por UPM
+
+
+```{r}
+library(samplesize4surveys)
+library(readxl)
+library(dplyr)
+library(samplesize4surveys)
+library(readxl)
+library(writexl)
+
+
+deff_new <- function(deff_old, n_old, n_new){
+    1 + (n_new-1) * ((deff_old - 1) / (n_old - 1)) 
+}
+```
+
+
+
+```{r pobrezaextrema}
+source("funciones/f_tablaMue_desocupacion.R")
+source("funciones/f_tablaMue_pobrezaExtrema.R")
+```
+
+
+Leemos los tamaños de muestra ya establecidos para pobreza extrema y desocupación:
+
+```{r}
+setwd("../output/3.ArticulacionTamMuestraAjustado")
+dir()
+tabla_resultado_desoc <- read_xlsx("tabla_resultado_desoc.xlsx") 
+tabla_resultado_PE <- read_xlsx("tabla_resultado_PE.xlsx")
+```
+
+Leemos los parámetros de las tablas de muestreo:
+
+```{r}
+setwd("../data")
+
+df_parametrostablas_pobrezaExtrema <- read_xlsx("ParametrosTablasMuestreo_PobrezaExtrema.xlsx")
+
+df_parametrostablas_desocupacion <- read_xlsx("ParametrosTablasMuestreo_Desempleo.xlsx")
+```
+
+
+
+Calcalos los nuevos parámetros del deff para pobreza extrema:
+
+```{r}
+nuevo_deff_PE <- deff_new(deff_old = df_parametrostablas_pobrezaExtrema$deff,
+                                n_old = df_parametrostablas_pobrezaExtrema$nro_vivXUPM, 
+                                n_new = 6)
+```
+
+De manera similar calculamos el deff para desocupación:
+
+```{r}
+nuevo_deff_desoc <- deff_new(deff_old = df_parametrostablas_desocupacion$deff,
+                    n_old = df_parametrostablas_desocupacion$nro_vivXUPM, 
+                    n_new = 6)
+```
+
+
+# Estimación de margenes de error para desocupación (mensual)
+
+```{r}
+fraccion_trimestral <- 1/3
+cve_desocup_mes <- e4p(N = df_parametrostablas_desocupacion$N, 
+    n =  tabla_resultado_desoc$PSUinSample * 6 * fraccion_trimestral, 
+    P = df_parametrostablas_desocupacion$P, 
+    DEFF =  nuevo_deff_desoc, conf = 0.95, plot = FALSE)$cve
+cve_desocup_mes
+```
+
+
+
+
+
+Recordemos que me = z * ee
+
+$$
+cve = \frac{ee}{\hat{P}} = \frac{me}{z\hat{P}}=\frac{mer}{z}
+$$
+Por lo tanto:
+
+$$
+me = z*\hat{P}cve
+$$
+
+Calculamos el intervalos de cofianza para desocupación:
+
+```{r}
+conf<- 0.95
+alpha <- 1- conf
+z <- qnorm(1-alpha/2)
+
+me_desocupuacion_mes <- z * df_parametrostablas_desocupacion$P * (cve_desocup_mes / 100)
+LI_desocupuacion_mes <- df_parametrostablas_desocupacion$P - me_desocupuacion_mes
+LS_desocupuacion_mes <- df_parametrostablas_desocupacion$P + me_desocupuacion_mes
+P_desocupuacion_mes <-  df_parametrostablas_desocupacion$P   
+IC_desocupuacion_mes <- data.frame(Agregacion = df_parametrostablas_desocupacion$Agregacion,
+  LI_desocupuacion_mes = LI_desocupuacion_mes,
+                P_desocupuacion_trim = P_desocupuacion_mes, 
+                LS_desocupuacion_trim = LS_desocupuacion_mes)
+IC_desocupuacion_mes
+```
+
+
+
+# Estimación de margenes de error para pobreza extrema (mensual)
+
+
+```{r}
+fraccionMensual_mes_PE <- (15/24) / 3
+cve_PE_mens <- e4p(N = df_parametrostablas_pobrezaExtrema$N, 
+    n =  tabla_resultado_PE$PSUinSample * 6 * fraccionMensual_mes_PE, 
+    P = df_parametrostablas_pobrezaExtrema$P, 
+    DEFF =  nuevo_deff_PE, conf = 0.95, plot = FALSE)$cve
+cve_PE_mens
+```
+
+
+```{r}
+conf<- 0.95
+alpha <- 1- conf
+z <- qnorm(1-alpha/2)
+
+me_pobezaExtrema_mens <- z * df_parametrostablas_pobrezaExtrema$P * (cve_PE_mens / 100)
+LI_pobezaExtrema_mens <- df_parametrostablas_pobrezaExtrema$P - me_pobezaExtrema_mens
+LS_pobezaExtrema_mens <- df_parametrostablas_pobrezaExtrema$P + me_pobezaExtrema_mens
+P_pobezaExtrema_mens <-  df_parametrostablas_pobrezaExtrema$P   
+
+IC_pobezaExtrema_mens <- data.frame(Agregacion = df_parametrostablas_pobrezaExtrema$Agregacion, LI_pobezaExtrema_mens = LI_pobezaExtrema_mens,
+                P_pobezaExtrema_mens = P_pobezaExtrema_mens, 
+                LS_pobezaExtrema_mens = LS_pobezaExtrema_mens)
+IC_pobezaExtrema_mens$me <- IC_pobezaExtrema_mens$LS_pobezaExtrema_mens - IC_pobezaExtrema_mens$LI_pobezaExtrema_mens
+IC_pobezaExtrema_mens
+```
+
+
+# Estimación de margenes de error para pobreza extrema (trimestral)
+
+
+```{r}
+fraccionMensual_trimes_PE <- 15/24
+cve_PE_trimes <- e4p(N = df_parametrostablas_pobrezaExtrema$N, 
+    n =  tabla_resultado_PE$PSUinSample * 6 * fraccionMensual_trimes_PE, 
+    P = df_parametrostablas_pobrezaExtrema$P, 
+    DEFF =  nuevo_deff_PE, conf = 0.95, plot = FALSE)$cve
+cve_PE_trimes
+```
+
+
+```{r}
+conf<- 0.95
+alpha <- 1- conf
+z <- qnorm(1-alpha/2)
+
+me_pobezaExtrema_trimes <- z * df_parametrostablas_pobrezaExtrema$P * (cve_PE_trimes / 100)
+LI_pobezaExtrema_trimes <- df_parametrostablas_pobrezaExtrema$P - me_pobezaExtrema_trimes
+LS_pobezaExtrema_trimes <- df_parametrostablas_pobrezaExtrema$P + me_pobezaExtrema_trimes
+P_pobezaExtrema_trimes <-  df_parametrostablas_pobrezaExtrema$P   
+
+IC_pobezaExtrema_trimes <- data.frame(Agregacion = df_parametrostablas_pobrezaExtrema$Agregacion, LI_pobezaExtrema_trimes = LI_pobezaExtrema_trimes,
+                P_pobezaExtrema_trimes = P_pobezaExtrema_trimes, 
+                LS_pobezaExtrema_trimes = LS_pobezaExtrema_trimes)
+IC_pobezaExtrema_trimes$me <- IC_pobezaExtrema_trimes$LS_pobezaExtrema_trimes - IC_pobezaExtrema_trimes$LI_pobezaExtrema_trimes 
+IC_pobezaExtrema_trimes
+```
+
+
+Organización de salidas
+
+```{r}
+salida_IC <- list(IC_desocupuacion_mes, IC_pobezaExtrema_mens, IC_pobezaExtrema_trimes)
+names(salida_IC) <- c("IC_desocupuacion_mes", "IC_pobezaExtrema_mens", "IC_pobezaExtrema_trimes")
+write_xlsx(salida_IC, "salida_IC.xlsx")
+```
+
