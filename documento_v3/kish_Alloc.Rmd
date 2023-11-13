@@ -1,0 +1,194 @@
+---
+title: "Asignación de tamaño de muestra"
+author: "José Fernando Zea"
+date: "2023-11-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Asignación de tamaño de muestra
+
+
+Desarrollamos la función de Kish:
+
+```{r}
+f_kishAlloc <- function(N_h, n, I = 1){
+  H <- length(N_h)
+  N <- sum(N_h)
+  W_h <- N_h / N 
+  num <- sqrt((1/(H^2)) + I * (W_h^2))
+  denom <- sum(num)
+  nh_Kish <- n * num / denom
+  round(nh_Kish)
+}
+
+# f_kishAlloc(N_h = c(200, 300, 500), n = 100)
+```
+
+```{r}
+library(haven)
+library(dplyr)
+#library(samplesize4surveys)
+library(readxl)
+library(labelled)
+```
+
+
+```{r}
+setwd("../data")
+df_marco <- read_spss("MMV_2011 usuarios_Cepal_20_10_23.sav")
+```
+
+Son 14 estratos en el marco, en 5 regiones (exceptuando la central) se combina con urbano y rural, otro estrato es la región central rural, y otros tres estratos son la región central en el área urbana en nivel socieconómico bajo, medio y alto.
+
+```{r}
+unique(df_marco$Estrato) %>% as.numeric() %>% sort()
+```
+
+Leemos los resultados de tamaño de muestra:
+
+
+```{r}
+setwd("../output/3.ArticulacionTamMuestraAjustado")
+df_resultado_desoc <- read_excel("tabla_resultado_desoc.xlsx")
+```
+
+Ajustamos el tamaño de muestra regional con respecto al tamaño de muestra nacional (que tiene un tamaño de muestra ligeramente mayor):
+
+```{r}
+n_regional <- df_resultado_desoc %>% filter(agregacion %in% 
+                    c("Region_Central", "Region_Chorotega", "Region_Pacifica_Central", 
+                      "Region_Brunca", "Region_Huetar_Atlantico", "Region_Huetar_Norte")) %>%
+                     pull(HouseholdsInSample_Adjusted)
+
+prop_regional <- n_regional / sum(n_regional)
+n_nacional <- df_resultado_desoc %>% 
+                       filter(agregacion == "Nacional") %>%
+                       pull(HouseholdsInSample_Adjusted)
+n_regional_ajustado <- round(prop_regional * n_nacional)
+n_regional_ajustado
+```
+
+Comprobamos la coincidencia de los tamaños de muestra:
+
+```{r}
+sum(n_regional_ajustado)
+n_nacional
+```
+
+Asignamos esos valores en un dataframe:
+
+```{r}
+df_Tamregional <- data.frame(agregacion = df_resultado_desoc %>% filter(agregacion %in% 
+                    c("Region_Central", "Region_Chorotega", "Region_Pacifica_Central", 
+                      "Region_Brunca", "Region_Huetar_Atlantico", "Region_Huetar_Norte")) %>%
+                     pull(agregacion),
+           n_regional_ajustado = n_regional_ajustado
+)
+```
+
+
+# Asignación de Kish
+
+
+Estimamos el número de hogares por estrato:
+
+```{r}
+df_hogaresXEstrato <- df_marco %>% group_by(Estrato) %>% 
+                      summarise(cuenta = n(), Total_Hogares = sum(Total_Hogares, na.rm = T), 
+                                faltantes = sum(is.na(Total_Hogares)))
+
+df_hogaresXEstrato$NombreRegion <- c("Region_Central", "Region_Central", "Region_Central", "Region_Central",
+"Region_Chorotega", "Region_Chorotega", "Region_Pacifica_Central", "Region_Pacifica_Central",
+"Region_Brunca", "Region_Brunca", "Region_Huetar_Atlantico", "Region_Huetar_Atlantico",
+"Region_Huetar_Norte", "Region_Huetar_Norte")
+df_hogaresXEstrato <- df_hogaresXEstrato %>% relocate(NombreRegion)
+```
+
+
+Generamos correlativa de las regiones:
+
+```{r}
+df_etiquetaEstratos <- val_labels(df_marco$Estrato) %>% as.table() %>% as.data.frame() 
+df_etiquetaEstratos$NombreRegion <- c("Region_Central", "Region_Central", "Region_Central", "Region_Central",
+"Region_Chorotega", "Region_Chorotega", "Region_Pacifica_Central", "Region_Pacifica_Central",
+"Region_Brunca", "Region_Brunca", "Region_Huetar_Atlantico", "Region_Huetar_Atlantico",
+"Region_Huetar_Norte", "Region_Huetar_Norte")
+
+names(df_etiquetaEstratos) <- c("NombreEstrato", "Estrato", "NombreRegion")
+```
+
+Integro los nombres 
+
+```{r}
+df_hogaresXEstrato <- left_join(df_hogaresXEstrato,  df_etiquetaEstratos, by = c("NombreRegion", "Estrato"))
+df_hogaresXEstrato <- df_hogaresXEstrato[c("NombreRegion", "Estrato", "NombreEstrato",
+                       "Total_Hogares")]
+```
+
+
+
+En cada una de las regiones se realizará la asignación de Kish, se itera el método:
+
+```{r}
+vctr_region <- unique(df_hogaresXEstrato$NombreRegion)
+lst_asignacionKish <- vector(mode = "list", length = length(vctr_region))
+for(i in 1:length(vctr_region)){
+Nh_region <- df_hogaresXEstrato %>% filter(NombreRegion == vctr_region[i]) %>% pull(Total_Hogares)
+n_region <- df_Tamregional %>% filter(agregacion == vctr_region[i]) %>% pull(n_regional_ajustado)
+nh_AsignKish <- round(f_kishAlloc(N_h = Nh_region, n = n_region, I = 1))
+nh_AsignProp <- round(n_region * Nh_region / sum(Nh_region))
+lst_asignacionKish[[i]] <- data.frame(Estrato = df_hogaresXEstrato %>% 
+                                        filter(NombreRegion == vctr_region[i]) %>%
+                                        pull(Estrato),
+   NombreEstrato = df_hogaresXEstrato %>% 
+                                        filter(NombreRegion == vctr_region[i]) %>%
+                                        pull(NombreEstrato),                                   
+                                      
+  agregacion = rep(vctr_region[i], length(Nh_region)), 
+                            n = n_region, Nh_region, nh_AsignProp, nh_AsignKish)
+}
+df_asignacionKishEstrato <- bind_rows(lst_asignacionKish)
+df_asignacionKishEstrato 
+```
+
+Colocamos las estimaciones para cada unos de los estratos:
+
+```{r}
+df_asignacionKishEstrato <- df_asignacionKishEstrato %>% 
+  mutate(Zona = c("Urbano", "Urbano", "Urbano", "Rural",
+                     rep(c("Urbano", "Rural"), 5))) %>%
+  relocate(Zona, .after = agregacion)
+```
+
+
+Calculamos las estimaciones por área:
+
+```{r}
+df_asignacionKish_Zona <- df_asignacionKishEstrato %>% group_by(Zona) %>% summarise(Nh_region = sum(Nh_region),
+                                     nh_AsignProp = sum(nh_AsignProp),
+                                     nh_AsignKish = sum(nh_AsignKish))
+```
+
+
+Guardamos la repartición de muestra en los estratos:
+
+```{r}
+salida <- list(df_asignacionKishEstrato, df_asignacionKish_Zona, df_resultado_desoc)
+names(salida) <- c("TamMuestraEstrato", "TamMuestraZona", "TamMuestraInicial")
+```
+
+
+```{r}
+setwd("../output/AsignacionesXEstrato")
+write_xlsx(salida, "AsignacionKishTamañoMuestraDesocupacion.xlsx")
+```
+
+
+```{r}
+
+```
+
