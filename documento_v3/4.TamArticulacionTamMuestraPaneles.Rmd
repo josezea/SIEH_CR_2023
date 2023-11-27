@@ -24,6 +24,7 @@ B:
 Cargamos los paquetes:
 
 ```{r}
+# library(remotes)
 # install_github("psirusteam/SamplingCoordination")
 library(samplesize4surveys)
 library(SamplingCoordination)
@@ -503,12 +504,12 @@ Obtenemos un archivo para la selección de la muestra:
 
 ```{r}
 resultados_muestra_paneles <- bind_rows(
-resultado_central$DF_Strata_Panels,
-resultado_chorotega$DF_Strata_Panels,
-resultado_region_pacificaCentral$DF_Strata_Panels,
-resultado_brunca$DF_Strata_Panels,
-resultado_huetarAtlantico$DF_Strata_Panels,
-resultado_huetarNorte$DF_Strata_Panels)
+resultado_central$DF_Strata_Panels, # 2 UPMS virtuales
+resultado_chorotega$DF_Strata_Panels, # 5 UPMS virtuales
+resultado_region_pacificaCentral$DF_Strata_Panels, # 8 upms virtuales
+resultado_brunca$DF_Strata_Panels, # 6 upms virtuales
+resultado_huetarAtlantico$DF_Strata_Panels, # 6 upms virtuales
+resultado_huetarNorte$DF_Strata_Panels) # 5 upms virtuales
 ```
 
 Algunas comprobaciones
@@ -521,5 +522,15 @@ resultado_central$DF_Strata_Panels %>% filter(Panels %in%
 ```{r}
 setwd("../output/4.Paneles")
 saveRDS(resultados_muestra_paneles, "resultados_muestra_paneles.Rds")
+```
+
+```{r}
+resultados_muestra_paneles <- resultados_muestra_paneles %>% ungroup()
+#readr::write_csv(resultados_muestra_paneles, "resultados_muestra_paneles.csv")
+data.table::fwrite(resultados_muestra_paneles, "resultados_muestra_paneles.csv")
+paneles <- paneles %>% tibble::rownames_to_column()
+names(paneles)[1] <- "fecha"
+writexl::write_xlsx(paneles, "paneles.xlsx")
+
 ```
 

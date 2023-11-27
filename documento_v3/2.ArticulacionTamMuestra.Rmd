@@ -32,32 +32,42 @@ Requerimmos también crear una función que permita establecer el coeficiente de
 Recordemos que el coeficiente de correlación intraclásica puede ser calculado como:
 
 $$
-deff = 1 + (n-1) * ICC 
+deff = 1 + (\bar n-1) * \rho 
 $$
+Donde $\bar n$ es el promedio de viviendas seleccionadas por UPM e $\rho$  el coeficiente de correlación.
+
 En la anterior expresión ICC correspone al coeficiente de correlación intraclásica, la cual es una medida de homogeneidad de una variable de interés dentro de una UPM y n corresponde al promedio de hogares por UPM.
 
-Si se despeja el coeficiente de correlación intraclásica se puede obtener a partir del efecto diseño y el promedio de hogares que hay en cada UPM:
+Si se despeja el coeficiente de correlación intraclásica se puede obtener como es calcula esta expresión a partir del efecto diseño y el promedio de hogares que hay en cada UPM:
 
 $$
-ICC = \frac{deff-1}{n-1}
+\rho = \frac{deff-1}{\bar n-1}
 $$
 
 El coeficiente de variación se puede obtener a partir del tamaño de muestra de las Unidades Secundarias de Muestreo y el efecto diseño.
-El efecto diseño sin embargo depende del coeficiente de correlación intraclásica de la encuesta y el promedio de hogares por UPM. Podemos calcular el coeficiente de correlación intraclásica a partir de la encuesta como sigue:
+
+# Coeficiente de correlación calculado de la encuesta
+
+El efecto diseño puede obtenerse a partir de la encuesta usando como insumo el coeficiente de correlación intraclásica de la encuesta y el promedio de hogares por UPM observada en la encuesta. El coeficiente de correlación intraclásica se obtiene a partir de la encuesta como sigue:
 
 
 $$
-ICC = \frac{deff_{old}-1}{n_{old}-1}
+\rho_{old-encuesta} = \frac{deff_{old}-1}{n_{old}-1}
 $$
+
+
 En esta expresión $deff_{old}$ hace referencia al efecto diseño obtenido a partir de la ECE 2022 o la ENAHO 2022 para desocupación y pobreza extrema respectivamente.
 $n_{old}$ hace referencia por otro lado al número de hogares por UPM en estas dos encuestas.
 
-Una vez se dispone del coeficiente de correlación intraclásica puede calcularse el efecto diseño que se obtendría en un nuevo levantamiento a partir del coeficiente de correlación intraclásica y el número de hogares por UPM ($n_{new}$) que se considerarían para el nuevo levantamiento que para este caso será 6:
+Una vez se dispone del coeficiente de correlación intraclásica a partir de la encuesta puede calcularse el efecto diseño que se obtendría en un nuevo levantamiento a partir del coeficiente de correlación intraclásica y el número de hogares por UPM ($n_{new}$) que se considerarían para el nuevo levantamiento que para este caso será 6:
 
 
 $$
-deff_{new} = 1 + (n_{new}-1) \times ICC = 1 + (n_{new}-1) \times \frac{deff_{old}-1}{n_{old}-1} 
+deff_{new} = 1 + (n_{new}-1) \times \rho_{old-encuesta} = 1 + (n_{new}-1) \times \frac{deff_{old}-1}{n_{old}-1} 
 $$
+
+$n_{new}$ ahora es 6, $deff_{old}$ es el efecto diseño obtenido a partir de la encuesta, 
+$n_{old}$ es el promedio de viviendas por UPM de la encuesta.
 
 La función que permite calcular el nuevo efecto diseño es:
 
@@ -98,18 +108,27 @@ tabla_PE_reduc <- tabla_PE %>% select(agregacion, cve_PE = cve,
 tabla_desocup_reduc <- tabla_desocup %>% select(agregacion, cve_desocup = cve, 
                     PSUinSample_desocup = PSUinSample)
 
-# Calculamos la acumulación en el año de desocupación que sería lo que se usaría en desocupación
+```
+
+Calculamos la acumulación en el año de desocupación, recordemos que el tamaño de muestra de la desocupación es trimestral, sin embargo se requiere contrastar con el tamaño anual:
+
+```{r}
 tabla_desocup_reduc$PSUinSample_desocup <- 24/15 * tabla_desocup_reduc$PSUinSample_desocup
+```
 
 
-# Esta tabla esta llevada anualmente
+Se integran los tamaños de desocupación anual de pobreza extrema y desocupación:
+
+```{r}
 tabla_indicadores_pobreza_desocup <- inner_join(tabla_PE_reduc, tabla_desocup_reduc,
                                                 by = "agregacion")
+# Redondeo de cve's
 tabla_indicadores_pobreza_desocup$cve_desocup <- round(tabla_indicadores_pobreza_desocup$cve_desocup, 3)
 tabla_indicadores_pobreza_desocup$PSUinSample_desocup <- round(tabla_indicadores_pobreza_desocup$PSUinSample_desocup,0)
-
+names(tabla_indicadores_pobreza_desocup)[names(tabla_indicadores_pobreza_desocup) == "PSUinSample"] <- "PSUinSample_PE"
 tabla_indicadores_pobreza_desocup %>% flextable()
 ```
+
 
 Observamos que el tamaño de muestra de desocupación cubriría el tamaño de muestra necesaria para pobreza extrema a nivel nacional y para las zonas urbanas y rurales.
 Para las zonas, se observa que la región central y Huetar norte no cubrirían los tamaños de desocupación no cubren los tamaños de pobreza que se obtuvieron para pobreza extrema, sin embargo es importante considerar que los tamaños que se obtuvieron para las regiones para pobreza extrema alcanzarían a garantizar un cve 5,3% y en los requerimientos del INEC se requiere cve's menores al 9%.
@@ -121,4 +140,8 @@ Por lo tanto se analizará si los tamaños de muestra que brinda la acumulación
 saveRDS(tabla_indicadores_pobreza_desocup, "../output/2.ArticulacionTamMuestra/tabla_indicadores_pobreza_desocup.Rds")
 ```
 
+
+```{r}
+
+```
 

@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Articulación de tamaño de muestra"
 author: "José Fernando Zea"
 date: "2023-06-19"
 output: html_document
@@ -9,42 +9,59 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Cargue de paquetes y funciones
 
 ```{r}
 library(dplyr)
 library(samplesize4surveys)
 library(readxl)
+```
+
+Recordemos la relación del deff con la correlación intraclásica:
+
+$$
+deff= 1 + (\bar n-1)\rho
+$$
+Cargamos la función que calcula el efecto diseño con el nuevo de viviendas por UPM ($\bar n$):
+
+```{r}
 deff_new <- function(deff_old, n_old, n_new){
   1 + (n_new-1) * ((deff_old - 1) / (n_old - 1)) 
 }
 ```
 
 
+Cargamos las funciones de las tablas de muestreo
 ```{r pobrezaextrema}
 source("funciones/f_tablaMue_desocupacion.R")
 source("funciones/f_tablaMue_pobrezaExtrema.R")
-
 ```
+
+
+# Cargua de datos
+
+Cargamos los parámetros de las tablas de muestreo:
 
 ```{r}
 setwd("../data")
-
 df_parametrostablas_pobrezaExtrema <- read_xlsx("ParametrosTablasMuestreo_PobrezaExtrema.xlsx")
-
 df_parametrostablas_desocupacion <- read_xlsx("ParametrosTablasMuestreo_Desempleo.xlsx")
 ```
+
+Cargamos los tamaños de muestra proyectados por pobreza y desocupación:
 
 ```{r}
 setwd("../output/2.ArticulacionTamMuestra/")
 tabla_indicadores_pobreza_desocup <- readRDS("tabla_indicadores_pobreza_desocup.Rds")
 ```
 
+Recordemos que el tamaño de muestra obtenido en la región central y Huetar norte no se alcanza el tamaño de muestra necesario para el tamaño de muestra anual de pobreza extrema. Consideraremos un tamaño de muestra combinado para desocupación y pobreza extrema.
 
-El tamaño de muestra obtenido en la región central y Huetar norte no se alcanza el tamaño de muestra necesario para el tamaño de muestra anual de pobreza extrema.
 
-Consideramos un tamaño de muestra combinado para desocupación y pobreza extrema:
 
-Para pobreza extrema: Para todas las regiones se conserva el tamaño de muestra de desocupación con excepción de las regiones Central y Huetar Norte que conservarán como tamaño de muestra el tamaño mínimo sugerido para pobreza extrema:
+# Tamaño de muestra para pobreza extrema
+
+Para pobreza extrema se conserva el tamaño de muestra de desocupación con excepción de las regiones Central y Huetar Norte que conservarán como tamaño de muestra el tamaño mínimo sugerido para pobreza extrema:
 
 ```{r}
 tabla_indicadores_pobrezaDesocup_Region <- tabla_indicadores_pobreza_desocup %>% 
@@ -55,12 +72,19 @@ psuinsample_pobreza <- ifelse(tabla_indicadores_pobrezaDesocup_Region$agregacion
                                 c("Chorotega", "Pacifica Central", 
                                   "Brunca", "Huetar Atlantico"), 
                        tabla_indicadores_pobrezaDesocup_Region$PSUinSample_desocup,
-                       tabla_indicadores_pobrezaDesocup_Region$PSUinSample)
+                       tabla_indicadores_pobrezaDesocup_Region$PSUinSample_PE)
+```
 
+Este es el tamaño de muestra anual que se considerará por región para pobreza extrema:
+
+```{r}
 df_pobrezaAnualRegion <- data.frame(agregacion = tabla_indicadores_pobrezaDesocup_Region$agregacion,                               PSUinSample = psuinsample_pobreza)
 ```
 
-Calculamos el coeficiente de variación:
+
+
+Como el tamaño de muestra anual se modificó en la región cental y de Huetar Norte, calcularemos las medidas de precisión (coeficiente de variación para cada una de las regiones):
+Calculamos el coeficiente de variación con la función e4p:
 
 ```{r}
 df_parametrostablas_pobrezaExtrema_region <- 
@@ -80,11 +104,12 @@ df_pobrezaAnualRegion$cve <- e4p(N = df_parametrostablas_pobrezaExtrema_region$N
 ```
 
 
-Con estos insumos calculamos las tablas de muestreo:
+Puedo reconstruir las tablas de muestreo para pobreza extrema anual (con el cve combinado):
 
 ```{r}
-tabla_Central_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Central",
-cve = df_pobrezaAnualRegion$cve[df_pobrezaAnualRegion$agregacion == "Central"] / 100,                         m = 6)
+tabla_Central_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema,
+                                              "Region_Central",
+  cve = df_pobrezaAnualRegion$cve[df_pobrezaAnualRegion$agregacion == "Central"] / 100,                         m = 6)
 
 tabla_Chorotega_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema, "Region_Chorotega",
 cve = df_pobrezaAnualRegion$cve[df_pobrezaAnualRegion$agregacion == "Chorotega"] / 100, m = 6)
@@ -113,14 +138,21 @@ tabla_HuetarAtlantico_PE,
 tabla_HuetarNorte_PE)
 ```
 
+El tamaño de muestra de pobreza extrema anual:
+
+```{r}
+tabla_Regiones_PE
+```
 
 
-# Tamaño de muestra a nivel nacional
-Se calcula el tamaño de muestra a nivel nacional:
+
+## Tamaño de muestra a nivel nacional
+
+Se agrega el tamaño de muestra a nivel nacional y se calcula el nuevo coeficiente de variación para recalcular las tablas de muestreo:
 
 ```{r}
 df_pobrezaAnualNacional <- data.frame(agregacion = "Nacional", 
-                                      PSUinSample = sum(df_pobrezaAnualRegion$PSUinSample),
+                          PSUinSample = sum(df_pobrezaAnualRegion$PSUinSample), # Sumo los tamaños nacionales
                             cve = NA)
 
 nuevo_deff_nacional <- deff_new(deff_old = df_parametrostablas_pobrezaExtrema$deff[1],
@@ -137,15 +169,14 @@ Calculamos la tabla de muestreo para nacional:
 
 
 ```{r}
-
 tabla_Nacional_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtrema,
-                          "Nacional",
-cve = df_pobrezaAnualNacional$cve / 100, m = 6)
+                          "Nacional", cve = df_pobrezaAnualNacional$cve / 100, m = 6)
+tabla_Nacional_PE
 ```
+Se observa un cve del 2,2%
 
 
-
-# Tamaño de muestra a nivel de zona
+## Tamaño de muestra a nivel de zona (urbana y rural)
 
 
 Se optimiza el coeficiente de variación para el área urbana y rural:
@@ -210,6 +241,7 @@ tabla_zonaRural_PE <- f_tablaMue_PobrezaExtrema(df_parametrostablas_pobrezaExtre
                                                 cve = solucion_zona,  m = 6)
 
 tabla_zona_PE <- bind_rows(tabla_zonaUrbana_PE, tabla_zonaRural_PE)
+tabla_zona_PE
 ```
 
 
@@ -218,14 +250,12 @@ La tabla a nivel regional se realiza con un úmero de encuestas de 8 para hacerl
 
 ```{r}
 tabla_Regiones_PE$HouseholdsPerPSU_Adjusted <- 8
-
 tabla_Regiones_PE$HouseholdsInSample_Adjusted <- tabla_Regiones_PE$HouseholdsPerPSU_Adjusted * tabla_Regiones_PE$PSUinSample
 ```
 
 
 ```{r}
 tabla_zona_PE$HouseholdsPerPSU_Adjusted <- 8
-
 tabla_zona_PE$HouseholdsInSample_Adjusted <- tabla_zona_PE$HouseholdsPerPSU_Adjusted * tabla_zona_PE$PSUinSample
 ```
 
@@ -284,15 +314,14 @@ tabla_resultado_PE$PSUinSample[4] +
   tabla_resultado_PE$PSUinSample[5] + tabla_resultado_PE$PSUinSample[6] +
   tabla_resultado_PE$PSUinSample[7] + tabla_resultado_PE$PSUinSample[8 ] + 
   tabla_resultado_PE$PSUinSample[9]
-
-
 ```
+
 
 
 
 # Tamaño de muestra desocupación
 
-También calculamos el tamaño de muestra para la desocupación:
+También calculamos el tamaño de muestra para la desocupación, para esto utilizamos el tamaño de muestra anual de pobreza extrema y lo mensualizamos (según el esquema rotativo):
 
 ```{r}
 psuinsample_desocupacion <- round(psuinsample_pobreza * 15/24)
@@ -305,7 +334,7 @@ df_DesocupacionRegion <- data.frame(agregacion = tabla_indicadores_pobrezaDesocu
 ```
 
 
-Calculamos el coeficiente de variación:
+Calculamos el coeficiente de variación resultante para pobreza extrema:
 
 ```{r}
 df_parametrostablas_desocupacion_region <- 
@@ -362,6 +391,15 @@ tabla_HuetarNorte_desocup)
 ```
 
 
+```{r}
+tabla_Regiones_desoc
+```
+El tamaño resultante para desocupación:
+
+```{r}
+sum(tabla_Regiones_desoc$HouseholdsInSample_Adjusted)
+```
+
 
 # Tamaño de muestra a nivel nacional
 Se calcula el tamaño de muestra a nivel nacional:
@@ -388,7 +426,6 @@ Calculamos la tabla de muestreo para nacional:
 
 
 ```{r}
-
 tabla_Nacional_desoc <- f_tablaMue_desocupacion(df_parametrostablas_desocupacion,
                           "Nacional",
 cve = df_DesocupacionNacional$cve / 100, m = 6)
